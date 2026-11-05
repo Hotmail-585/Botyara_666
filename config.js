@@ -14,10 +14,8 @@ firebase: {
   // Twitch Developer Console → ваше приложение → Client ID
   twitchClientId: '9tmo6brpt2wbubp4m8p1nzekm4bfp2',
 
-  // Адрес сайта = OAuth Redirect URL в приложении Twitch. Должен совпадать символ в символ.
-  // Оставьте пустым, чтобы сайт взял свой собственный адрес автоматически
-  // (например https://ваш-ник.github.io/название-репозитория/).
-  redirectUri: '',
+  // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
+  redirectUri: 'https://hotmail-585.github.io/Botyara_666/',
 
   // Twitch-ник бота (чат, где пишут !join). Пусто = в подсказках будет просто «в чате бота».
   botName: 'Botyara_666',
