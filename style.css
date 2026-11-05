@@ -47,7 +47,7 @@ body {
 
 .topbar { border-bottom: 1px solid var(--border); background: var(--panel); position: sticky; top: 0; z-index: 5; }
 .topbar-in { display: flex; align-items: center; justify-content: space-between; min-height: 56px; gap: 12px; }
-.brand { font-weight: 700; letter-spacing: .2px; }
+.brand { font-weight: 700; letter-spacing: .2px; text-align: left; margin-right: auto; }
 .userbox { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .usernick { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
 
