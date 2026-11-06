@@ -15,11 +15,22 @@ import {
   validateMessageText, validateInterval,
   normalizeChannel, timersAdd, timersEdit, timersRemove,
   parseTwitchHash, buildTwitchAuthUrl, makeState,
+  validateAdminLimit, formatAgo, formatDuration, alertsOf, botOnline, buildAdminRows,
 } from './validation.js';
 
 const $ = (id) => document.getElementById(id);
-const VIEWS = ['loading', 'error', 'login', 'linking', 'linkfail', 'nochannel', 'dashboard'];
+const VIEWS = ['loading', 'error', 'login', 'linking', 'linkfail', 'nochannel', 'dashboard', 'admin'];
 const STATE_KEY = 'twitch_oauth_state';
+const TAB_KEY = 'bot_tab';
+const BASE_TITLE = document.title;
+const ADMIN_TICK_MS = 15 * 1000;
+const PERM_HINT = 'Сервер отклонил действие. Проверьте, что в Firebase опубликованы новые правила (database.rules.json) и что ваш ник есть в ADMINS бота.';
+const LIMIT_FIELDS = [
+  ['limMaxChannels', 'maxChannels'],
+  ['limMaxCommands', 'maxCommands'],
+  ['limMaxTimers', 'maxTimers'],
+  ['limInactiveDays', 'inactiveDays'],
+];
 
 let auth = null;
 let db = null;
@@ -41,6 +52,14 @@ function freshState() {
     editingTimer: null,        // { index, old }
     dirtyValorant: false,
     dirtyInterval: false,
+    // админ-панель
+    isAdmin: false,
+    tab: null,                 // 'cabinet' | 'admin' | null (= выбрать автоматически)
+    unsubAdminFlag: null,
+    adminUnsubs: [],
+    adminTimer: null,
+    admin: null,
+    dirtyLimits: false,
   };
 }
 
@@ -48,7 +67,11 @@ function freshState() {
 
 function showView(name) {
   for (const v of VIEWS) $('view-' + v).hidden = v !== name;
-  $('userbox').hidden = !(name === 'dashboard' || name === 'nochannel') || !S?.nick;
+  const inCabinet = name === 'dashboard' || name === 'nochannel' || name === 'admin';
+  $('userbox').hidden = !inCabinet || !S?.nick;
+  $('tabs').hidden = !(inCabinet && S?.isAdmin && S?.nick);
+  $('main').classList.toggle('wide', name === 'admin');
+  renderTabs();
 }
 
 let toastTimer = null;
@@ -84,11 +107,11 @@ function setError(id, msg) {
   p.hidden = !msg;
 }
 
-function friendlyError(e) {
+function friendlyError(e, permHint) {
   const code = String(e?.code || '');
   const msg = String(e?.message || '');
   if (/permission_denied/i.test(code + msg)) {
-    return 'Сервер не принял изменение. Возможно, бот отключён от канала (!leave) или данные не прошли проверку.';
+    return permHint || 'Сервер не принял изменение. Возможно, бот отключён от канала (!leave) или данные не прошли проверку.';
   }
   if (/network|unavailable|offline|disconnected/i.test(code + msg)) {
     return 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.';
@@ -96,14 +119,14 @@ function friendlyError(e) {
   return 'Не удалось сохранить: ' + (code || msg || 'неизвестная ошибка');
 }
 
-async function save(fn, okMsg) {
+async function save(fn, okMsg, permHint) {
   try {
     await fn();
     if (okMsg) toast(okMsg, 'ok');
     return true;
   } catch (e) {
     console.error(e);
-    toast(friendlyError(e), 'err');
+    toast(friendlyError(e, permHint), 'err');
     return false;
   }
 }
@@ -215,6 +238,7 @@ function teardown() {
   try { S.unsubUser?.(); } catch { /* */ }
   try { S.unsubChannel?.(); } catch { /* */ }
   S.unsubUser = S.unsubChannel = null;
+  stopAdmin();
   S.id = null;
 }
 
@@ -249,11 +273,13 @@ function onLinked(nick) {
   $('loadingText').textContent = 'Загружаем настройки…';
   showView('loading');
   subscribeChannel();
+  subscribeAdminFlag();
 }
 
 function onUnlinked() {
   if (S.nick) { // связь пропала на лету: начинаем заново
     try { S.unsubChannel?.(); } catch { /* */ }
+    stopAdmin();
     S.nick = null;
     S.channel = undefined;
   }
@@ -295,11 +321,8 @@ function subscribeChannel() {
       if (!S.channel) {
         S.editingCmd = null;
         S.editingTimer = null;
-        showView('nochannel');
-      } else {
-        showView('dashboard');
-        renderDashboard();
       }
+      route();
     },
     (err) => {
       console.error(err);
@@ -307,6 +330,431 @@ function subscribeChannel() {
       showFatal('Нет доступа к настройкам канала (' + (err?.code || err?.message) + '). Попробуйте выйти и войти заново.');
     },
   );
+}
+
+// ---------- Вкладки и выбор экрана ----------
+
+function loadTab() {
+  try {
+    const v = localStorage.getItem(TAB_KEY);
+    return v === 'admin' || v === 'cabinet' ? v : null;
+  } catch { return null; }
+}
+function saveTab(v) {
+  try { localStorage.setItem(TAB_KEY, v); } catch { /* не страшно */ }
+}
+
+function effectiveTab() {
+  if (!S || !S.isAdmin) return 'cabinet';
+  if (S.tab) return S.tab;
+  return S.channel === null ? 'admin' : 'cabinet';   // у владельца бота может не быть своего канала
+}
+
+function renderTabs() {
+  const t = effectiveTab();
+  $('tabCabinet').setAttribute('aria-selected', String(t === 'cabinet'));
+  $('tabAdmin').setAttribute('aria-selected', String(t === 'admin'));
+}
+
+function setTab(tab) {
+  if (!S || !S.isAdmin) return;
+  S.tab = tab;
+  saveTab(tab);
+  route();
+}
+
+// Показывает нужный экран по текущему состоянию (вкладка, загружен ли канал, есть ли он).
+function route() {
+  if (!S || !S.nick) return;
+  if (effectiveTab() === 'admin') {
+    showView('admin');
+    renderAdmin();
+    return;
+  }
+  if (S.channel === undefined) { showView('loading'); return; }
+  if (S.channel === null) { showView('nochannel'); return; }
+  showView('dashboard');
+  renderDashboard();
+}
+
+// ---------- Админ-панель ----------
+
+function freshAdmin() {
+  return {
+    status: null, channels: null, stats: null, settings: null, blocked: null,
+    loaded: {}, errors: {},
+    offset: 0,                 // разница между часами сервера и этого устройства
+    filter: '',
+    seenAlertAt: null,         // самое новое оповещение, о котором уже знаем
+    wasOnline: null,
+  };
+}
+
+function serverNow() { return Date.now() + (S?.admin?.offset || 0); }
+
+// Владелец бота определяется по узлу admins/{ник}: его пишет только бот из списка ADMINS.
+function subscribeAdminFlag() {
+  const sid = S.id;
+  const nick = S.nick;
+  S.unsubAdminFlag = onValue(
+    ref(db, `admins/${nick}`),
+    (snap) => {
+      if (!S || S.id !== sid || S.nick !== nick) return;
+      const is = snap.val() === true;
+      if (is === S.isAdmin) return;
+      S.isAdmin = is;
+      if (is) { S.tab = loadTab(); startAdmin(); } else stopAdminData();
+      route();
+    },
+    (err) => { console.error(err); /* не владелец или правила не обновлены: вкладки просто не будет */ },
+  );
+}
+
+let adminRaf = null;
+const adminPending = new Set();
+function scheduleAdminRender(...parts) {
+  for (const p of parts) adminPending.add(p);
+  if (adminRaf) return;
+  adminRaf = requestAnimationFrame(() => {
+    adminRaf = null;
+    const p = new Set(adminPending);
+    adminPending.clear();
+    if (S?.isAdmin && effectiveTab() === 'admin') renderAdmin(p);
+  });
+}
+
+const ADMIN_SOURCES = [
+  ['admin/status', 'status', ['status', 'alerts', 'limits']],
+  ['channels', 'channels', ['channels']],
+  ['admin/channelStats', 'stats', ['channels']],
+  ['admin/settings', 'settings', ['limits']],
+  ['admin/blocked', 'blocked', ['channels']],
+];
+
+function startAdmin() {
+  stopAdminData();
+  S.admin = freshAdmin();
+  const sid = S.id;
+  for (const [path, key, parts] of ADMIN_SOURCES) {
+    S.adminUnsubs.push(onValue(
+      ref(db, path),
+      (snap) => {
+        if (!S || S.id !== sid || !S.admin) return;
+        S.admin[key] = snap.val();
+        S.admin.loaded[key] = true;
+        delete S.admin.errors[key];
+        if (key === 'status') checkAdminEvents();
+        scheduleAdminRender(...parts, ...(Object.keys(S.admin.errors).length ? ['status'] : []));
+      },
+      (err) => {
+        console.error(err);
+        if (!S || S.id !== sid || !S.admin) return;
+        S.admin.errors[key] = err?.code || 'error';
+        scheduleAdminRender('status');
+      },
+    ));
+  }
+  S.adminUnsubs.push(onValue(ref(db, '.info/serverTimeOffset'), (snap) => {
+    if (S?.admin) S.admin.offset = Number(snap.val()) || 0;
+  }));
+  S.adminTimer = setInterval(() => {
+    if (!S?.admin) return;
+    checkAdminEvents();
+    if (effectiveTab() === 'admin') renderAdmin(new Set(['status', 'alerts']));
+  }, ADMIN_TICK_MS);
+}
+
+// Закрывает только данные админ-панели (подписки, таймер, значок в названии), флаг владельца остаётся.
+function stopAdminData() {
+  if (!S) return;
+  for (const off of S.adminUnsubs) { try { off(); } catch { /* */ } }
+  S.adminUnsubs = [];
+  clearInterval(S.adminTimer);
+  S.adminTimer = null;
+  S.admin = null;
+  document.title = BASE_TITLE;
+}
+
+// Закрывает всё: и данные, и слежение за флагом владельца (выход, потеря привязки).
+function stopAdmin() {
+  if (!S) return;
+  stopAdminData();
+  try { S.unsubAdminFlag?.(); } catch { /* */ }
+  S.unsubAdminFlag = null;
+  S.isAdmin = false;
+}
+
+function renderAdmin(parts = new Set(['status', 'alerts', 'channels', 'limits'])) {
+  if (!S?.isAdmin || !S.admin) return;
+  if (parts.has('status')) renderBotState();
+  if (parts.has('alerts')) renderAlerts();
+  if (parts.has('channels')) renderAdminChannels();
+  if (parts.has('limits')) renderLimits();
+  updateNotifyButton();
+}
+
+function kvRow(grid, label, value) {
+  grid.append(el('dt', { text: label }), el('dd', { text: value }));
+}
+
+function renderBotState() {
+  const A = S.admin;
+  const st = A.status;
+  const box = $('botState');
+  const grid = $('statusGrid');
+  box.replaceChildren();
+  grid.replaceChildren();
+
+  const setState = (cls, text) => box.append(el('span', { class: 'dot ' + cls, 'aria-hidden': 'true' }), el('span', { text }));
+
+  if (Object.keys(A.errors).length) {
+    setState('bad', 'Нет доступа к данным админ-панели (' + Object.values(A.errors)[0] + '). ' + PERM_HINT);
+    return;
+  }
+  if (!A.loaded.status) { setState('warn', 'Загрузка…'); return; }
+  if (!st) {
+    setState('warn', 'Бот ещё не передавал своё состояние. Обновите bot.js на хостинге и перезапустите бота.');
+    return;
+  }
+
+  const now = serverNow();
+  const online = botOnline(st, now);
+  if (online) setState('ok', 'Бот онлайн');
+  else setState('bad', 'Бот не отвечает: последний сигнал ' + (Number.isFinite(st.heartbeatAt) ? formatAgo(now - st.heartbeatAt) : 'неизвестно когда'));
+
+  kvRow(grid, 'Работает без перезапуска', online && Number.isFinite(st.startedAt) ? formatDuration(now - st.startedAt) : '—');
+
+  const tw = st.twitch || {};
+  let twText = tw.connected ? 'Подключён' : 'Нет соединения';
+  if (Number.isFinite(tw.lastDisconnectAt)) {
+    twText += ` (последний разрыв ${formatAgo(now - tw.lastDisconnectAt)}${tw.lastDisconnectReason ? ': ' + tw.lastDisconnectReason : ''})`;
+  }
+  kvRow(grid, 'Twitch', twText);
+
+  const c = st.channels || {};
+  const lim = st.limits || {};
+  kvRow(grid, 'Каналы', `${c.total ?? 0} из ${lim.maxChannels ?? '?'} · включено ${c.enabled ?? 0} · заблокировано ${c.blocked ?? 0}`);
+
+  const h = st.henrik || {};
+  kvRow(grid, 'HenrikDev: запросов', `за час ${h.requestsHour ?? 0}, за сутки ${h.requestsDay ?? 0}`);
+  kvRow(grid, 'HenrikDev: ошибок', `за час ${h.errorsHour ?? 0}, за сутки ${h.errorsDay ?? 0} (ответов 429 за сутки: ${h.rateLimitedDay ?? 0})`);
+
+  if (Number.isFinite(h.remaining) && Number.isFinite(h.limit)) {
+    const expired = Number.isFinite(h.resetAt) && now > h.resetAt;
+    const ago = Number.isFinite(h.observedAt) ? formatAgo(now - h.observedAt) : '';
+    const text = expired
+      ? `окно уже сбросилось, доступно до ${h.limit} запросов (по последнему ответу, ${ago}, оставалось ${h.remaining})`
+      : `осталось ${h.remaining} из ${h.limit}${Number.isFinite(h.resetAt) ? `, сброс через ${Math.max(0, Math.ceil((h.resetAt - now) / 1000))} с` : ''} (по последнему ответу, ${ago})`;
+    kvRow(grid, 'HenrikDev: лимит запросов', text);
+  } else {
+    kvRow(grid, 'HenrikDev: лимит запросов', 'пока нет данных (появятся после первого запроса !rank)');
+  }
+
+  let last = '—';
+  if (h.lastStatus) last = `HTTP ${h.lastStatus}`;
+  if (Number.isFinite(h.lastOkAt)) last += `, последний успешный ответ ${formatAgo(now - h.lastOkAt)}`;
+  kvRow(grid, 'HenrikDev: последний ответ', last);
+  if (h.lastError && Number.isFinite(h.lastErrorAt)) kvRow(grid, 'HenrikDev: последняя ошибка', `${h.lastError} (${formatAgo(now - h.lastErrorAt)})`);
+}
+
+const ALERT_LEVEL = { info: ['Инфо', ''], warn: ['Внимание', 'warn'], error: ['Ошибка', 'bad'] };
+
+function renderAlerts() {
+  const list = $('alertList');
+  list.replaceChildren();
+  const alerts = alertsOf(S.admin.status);
+  const now = serverNow();
+  for (const a of alerts) {
+    const [label, cls] = ALERT_LEVEL[a.level];
+    list.append(el('li', { class: 'item alert-item' }, [
+      el('span', { class: 'pill ' + cls, text: label }),
+      el('span', { class: 'item-text', text: a.text }),
+      el('span', { class: 'when', text: formatAgo(now - a.at) }),
+    ]));
+  }
+  $('alertEmpty').hidden = alerts.length > 0;
+}
+
+const STATUS_VIEW = {
+  active: ['Работает', 'ok'],
+  off: ['Выключен', 'warn'],
+  'auto-off': ['Отключён из-за тишины', 'warn'],
+  blocked: ['Заблокирован', 'bad'],
+};
+
+function renderAdminChannels() {
+  const A = S.admin;
+  const list = $('chanList');
+  list.replaceChildren();
+  if (!A.loaded.channels) { $('chanEmpty').textContent = 'Загрузка…'; $('chanEmpty').hidden = false; return; }
+
+  const rows = buildAdminRows(A.channels, A.stats, A.blocked);
+  $('chanCount').textContent = `(${rows.length})`;
+  const q = A.filter.trim().toLowerCase();
+  const shown = q ? rows.filter((r) => r.nick.includes(q)) : rows;
+  const now = serverNow();
+
+  for (const r of shown) {
+    const [label, cls] = STATUS_VIEW[r.status];
+    const head = el('div', { class: 'chan-head' }, [
+      /^[a-z0-9_]{3,25}$/.test(r.nick)
+        ? el('a', { href: `https://www.twitch.tv/${r.nick}`, target: '_blank', rel: 'noopener', text: r.nick })
+        : el('span', { text: r.nick }),
+      el('span', { class: 'pill ' + cls, text: label }),
+    ]);
+    const activity = r.stat.lastMessageAt
+      ? `последнее сообщение в чате ${formatAgo(now - r.stat.lastMessageAt)}`
+      : 'сообщений в чате ещё не было';
+    const main = el('div', { class: 'item-main' }, [
+      head,
+      el('div', { class: 'chan-meta', text: `Valorant: ${r.name || '—'}#${r.tag || '—'} (${r.region})` }),
+      el('div', { class: 'chan-meta', text: `Команд: ${r.commands} · авто-сообщений: ${r.timers} · !rank: ${r.stat.rank} · своих команд: ${r.stat.cmd} · сообщений в чате: ${r.stat.messages}` }),
+      el('div', { class: 'chan-meta', text: activity }),
+      r.blocked ? el('div', { class: 'chan-reason', text: 'Причина блокировки: ' + (r.blocked.reason || 'не указана') }) : null,
+    ]);
+
+    const actions = [];
+    if (r.status !== 'blocked') {
+      actions.push(el('button', {
+        class: 'btn small', type: 'button', text: r.enabled ? 'Выключить' : 'Включить',
+        onclick: () => adminSetEnabled(r.nick, !r.enabled),
+      }));
+      actions.push(el('button', {
+        class: 'btn small danger', type: 'button', text: 'Заблокировать',
+        onclick: () => adminBlock(r.nick),
+      }));
+    } else {
+      actions.push(el('button', {
+        class: 'btn small', type: 'button', text: 'Разблокировать',
+        onclick: () => adminUnblock(r.nick),
+      }));
+    }
+    actions.push(el('button', {
+      class: 'btn small danger', type: 'button', text: 'Удалить',
+      onclick: () => adminRemove(r.nick),
+    }));
+
+    list.append(el('li', { class: 'item chan' + (r.status === 'blocked' ? ' blocked' : '') }, [
+      main,
+      el('div', { class: 'item-actions' }, actions),
+    ]));
+  }
+
+  const empty = $('chanEmpty');
+  if (!rows.length) { empty.textContent = 'К боту пока не подключён ни один канал.'; empty.hidden = false; }
+  else if (!shown.length) { empty.textContent = 'Ничего не найдено.'; empty.hidden = false; }
+  else empty.hidden = true;
+}
+
+function renderLimits() {
+  const A = S.admin;
+  const st = A.status;
+  const settings = A.settings && typeof A.settings === 'object' ? A.settings : {};
+  for (const [id, key] of LIMIT_FIELDS) {
+    const input = $(id);
+    const def = st?.defaults?.[key];
+    input.placeholder = Number.isFinite(def) ? `по умолчанию: ${def}` : 'по умолчанию';
+    if (!S.dirtyLimits) input.value = Number.isInteger(settings[key]) ? String(settings[key]) : '';
+  }
+  const l = st?.limits;
+  $('limitsNote').textContent = l
+    ? `Сейчас действует: каналов до ${l.maxChannels}, команд до ${l.maxCommands}, авто-сообщений до ${l.maxTimers}, ${l.inactiveDays ? `отключение после ${l.inactiveDays} дн. тишины` : 'автоотключение выключено'}. Лимиты не удаляют то, что уже есть: они только не дают добавить сверх нормы.`
+    : '';
+}
+
+// ---------- Админ-панель: действия ----------
+
+async function adminSetEnabled(nick, on) {
+  await save(
+    () => update(ref(db, `channels/${nick}`), { enabled: on }),
+    on ? `Канал ${nick} включён` : `Канал ${nick} выключен`,
+    PERM_HINT,
+  );
+}
+
+async function adminBlock(nick) {
+  const reason = prompt(`Заблокировать канал ${nick}? Бот перестанет отвечать в его чате и не даст ему подключиться снова.\n\nПричина (можно оставить пустой):`, '');
+  if (reason === null) return;
+  const text = reason.replace(/\s+/g, ' ').trim().slice(0, 100);
+  const data = { at: serverTimestamp() };
+  if (text) data.reason = text;
+  await save(() => set(ref(db, `admin/blocked/${nick}`), data), `Канал ${nick} заблокирован`, PERM_HINT);
+}
+
+async function adminUnblock(nick) {
+  await save(() => set(ref(db, `admin/blocked/${nick}`), null), `Канал ${nick} разблокирован`, PERM_HINT);
+}
+
+async function adminRemove(nick) {
+  if (!confirm(`Удалить канал ${nick} из бота?\n\nКоманды, авто-сообщения и настройки этого канала пропадут. Стример сможет подключиться заново командой !join.`)) return;
+  await save(() => set(ref(db, `channels/${nick}`), null), `Канал ${nick} удалён`, PERM_HINT);
+}
+
+async function onLimitsSubmit(ev) {
+  ev.preventDefault();
+  const changes = {};
+  for (const [id, key] of LIMIT_FIELDS) {
+    const r = validateAdminLimit(key, $(id).value);
+    if (!r.ok) { setError('limitsError', r.error); return; }
+    changes[key] = r.value;       // null = убрать своё значение, бот возьмёт значение по умолчанию
+  }
+  setError('limitsError', '');
+  $('limitsSave').disabled = true;
+  const ok = await save(() => update(ref(db, 'admin/settings'), changes), 'Лимиты сохранены', PERM_HINT);
+  $('limitsSave').disabled = false;
+  if (ok) S.dirtyLimits = false;
+}
+
+// ---------- Админ-панель: события и уведомления ----------
+
+function notify(msg, kind = 'err') {
+  toast(msg, kind);
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Кабинет Twitch-бота', { body: msg });
+    }
+  } catch { /* не страшно */ }
+}
+
+// Следит за состоянием бота: новые оповещения, пропажа и возвращение сигнала, значок в названии вкладки.
+function checkAdminEvents() {
+  const A = S?.admin;
+  if (!A || !A.loaded.status || !A.status) return;
+  const now = serverNow();
+  const alerts = alertsOf(A.status);
+  const newest = alerts.reduce((m, a) => Math.max(m, a.at), 0);
+
+  if (A.seenAlertAt === null) {
+    A.seenAlertAt = newest;                       // при открытии страницы про старые оповещения не уведомляем
+  } else if (newest > A.seenAlertAt) {
+    const fresh = alerts.filter((a) => a.at > A.seenAlertAt && a.level !== 'info');
+    A.seenAlertAt = newest;
+    for (const a of fresh.slice(0, 3)) notify('Бот: ' + a.text, a.level === 'error' ? 'err' : 'err');
+  }
+
+  const online = botOnline(A.status, now);
+  if (A.wasOnline === true && !online) notify('Бот не отвечает: сигнал пропал.');
+  else if (A.wasOnline === false && online) notify('Бот снова онлайн.', 'ok');
+  A.wasOnline = online;
+
+  const recentError = alerts.some((a) => a.level === 'error' && now - a.at < 30 * 60 * 1000);
+  document.title = !online || recentError ? '⚠ ' + BASE_TITLE : BASE_TITLE;
+}
+
+function updateNotifyButton() {
+  const b = $('notifyBtn');
+  if (!('Notification' in window)) { b.hidden = true; return; }
+  b.hidden = false;
+  const p = Notification.permission;
+  b.disabled = p !== 'default';
+  b.textContent = p === 'granted' ? 'Уведомления в браузере включены'
+    : p === 'denied' ? 'Уведомления запрещены в браузере'
+      : 'Включить уведомления в браузере';
+}
+
+async function onNotifyClick() {
+  try { await Notification.requestPermission(); } catch (e) { console.error(e); }
+  updateNotifyButton();
 }
 
 // ---------- Отрисовка кабинета ----------
@@ -574,6 +1022,7 @@ async function onIntervalSubmit(ev) {
 async function logout() {
   teardown();
   S = null;
+  document.title = BASE_TITLE;
   try { await signOut(auth); } catch (e) { console.error(e); }
   $('userNick').textContent = '';
   await startSession(null);
@@ -605,6 +1054,9 @@ function bindUi() {
   $('errorRetry').addEventListener('click', () => location.reload());
   $('logoutBtn').addEventListener('click', logout);
 
+  $('tabCabinet').addEventListener('click', () => setTab('cabinet'));
+  $('tabAdmin').addEventListener('click', () => setTab('admin'));
+
   $('enabledToggle').addEventListener('change', onEnabledChange);
   $('valorantForm').addEventListener('submit', onValorantSubmit);
   for (const id of ['vName', 'vTag', 'vRegion']) {
@@ -622,6 +1074,16 @@ function bindUi() {
   $('timerForm').addEventListener('submit', onTimerSubmit);
   $('timerCancel').addEventListener('click', resetTimerForm);
   $('timerText').addEventListener('input', () => updateCounter('timerText', 'timerCount'));
+
+  // админ-панель
+  $('chanSearch').addEventListener('input', () => {
+    if (!S?.admin) return;
+    S.admin.filter = $('chanSearch').value;
+    renderAdminChannels();
+  });
+  $('limitsForm').addEventListener('submit', onLimitsSubmit);
+  for (const [id] of LIMIT_FIELDS) $(id).addEventListener('input', () => { if (S) S.dirtyLimits = true; });
+  $('notifyBtn').addEventListener('click', onNotifyClick);
 
   updateCounter('cmdText', 'cmdCount');
   updateCounter('timerText', 'timerCount');

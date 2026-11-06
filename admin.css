@@ -1,0 +1,68 @@
+/* Вкладка «Админ». Использует цвета и кнопки из style.css. */
+
+main.wrap.wide { max-width: 980px; }
+
+/* Вкладки */
+.tabs {
+  display: flex; gap: 6px; margin: 0 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  appearance: none; background: transparent; border: 0;
+  border-bottom: 3px solid transparent; margin-bottom: -1px;
+  color: var(--muted); font: inherit; font-weight: 600;
+  padding: 10px 14px; cursor: pointer;
+}
+.tab:hover { color: var(--text); }
+.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+
+/* Состояние бота */
+.state { display: flex; align-items: center; gap: 8px; font-weight: 700; margin: 8px 0 0; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.dot.ok { background: var(--ok); }
+.dot.bad { background: var(--danger); }
+.dot.warn { background: var(--warn); }
+
+.kv {
+  display: grid; grid-template-columns: minmax(150px, 230px) 1fr;
+  gap: 8px 16px; margin: 14px 0 0;
+}
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 560px) {
+  .kv { grid-template-columns: 1fr; gap: 0; }
+  .kv dt { margin-top: 10px; font-size: .85rem; }
+}
+
+/* Метки */
+.pill {
+  display: inline-block; font-size: .78rem; font-weight: 700; line-height: 1;
+  padding: 4px 8px; border-radius: 999px; border: 1px solid var(--border);
+  background: var(--panel); color: var(--muted); white-space: nowrap; vertical-align: middle;
+}
+.pill.ok { color: var(--ok); border-color: var(--ok); }
+.pill.warn { color: var(--warn); border-color: var(--warn); }
+.pill.bad { color: var(--danger); border-color: var(--danger); }
+
+/* Оповещения */
+.alert-item { grid-template-columns: auto 1fr auto; align-items: center; }
+.alert-item .when { color: var(--muted); font-size: .85rem; white-space: nowrap; }
+@media (max-width: 480px) {
+  .alert-item { grid-template-columns: auto 1fr; }
+  .alert-item .when { grid-column: 1 / -1; }
+}
+
+/* Каналы */
+.search { margin: 12px 0 4px; }
+.chan-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.chan-head a { color: inherit; font-weight: 700; overflow-wrap: anywhere; }
+.chan-meta { color: var(--muted); font-size: .88rem; overflow-wrap: anywhere; }
+.chan-reason { color: var(--danger); font-size: .88rem; overflow-wrap: anywhere; }
+.chan.blocked { border-color: var(--danger); }
+
+/* Лимиты */
+.grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 12px 0; align-items: end; }
+@media (max-width: 760px) { .grid4 { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 420px) { .grid4 { grid-template-columns: 1fr; } }
+.field.tall > span { min-height: 2.6em; align-items: flex-start; }

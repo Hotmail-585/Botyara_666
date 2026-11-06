@@ -7,6 +7,7 @@
   <meta name="referrer" content="no-referrer">
   <title>Кабинет Twitch-бота</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="admin.css">
   <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -20,8 +21,14 @@
     </div>
   </header>
 
-  <main class="wrap">
+  <main id="main" class="wrap">
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <!-- Вкладки (видны только владельцу бота) -->
+    <nav id="tabs" class="tabs" role="tablist" aria-label="Разделы" hidden>
+      <button id="tabCabinet" class="tab" type="button" role="tab" aria-selected="true">Кабинет</button>
+      <button id="tabAdmin" class="tab" type="button" role="tab" aria-selected="false">Админ</button>
+    </nav>
 
     <!-- Загрузка -->
     <section id="view-loading" class="view center" hidden>
@@ -211,6 +218,63 @@
       <div class="card muted small">
         <p>«Выйти» закрывает кабинет только на этом устройстве. Бот и все настройки остаются как есть. Чтобы вернуться, войдите через Twitch снова. Отключить бота от канала можно командой <code>!leave</code> в чате бота.</p>
       </div>
+    </section>
+
+    <!-- Админ (только владелец бота) -->
+    <section id="view-admin" class="view" hidden>
+      <div class="card">
+        <h2>Состояние бота</h2>
+        <p id="botState" class="state"></p>
+        <dl id="statusGrid" class="kv"></dl>
+      </div>
+
+      <div class="card">
+        <div class="row between">
+          <div>
+            <h2>Оповещения</h2>
+            <p class="muted">Важные события: упал Twitch или HenrikDev, ключ отклонён, канал отключён. Сайт показывает их, пока открыт в браузере. Если бот упал совсем, он не сможет написать об этом сам: тогда вверху будет «Бот не отвечает».</p>
+          </div>
+          <button id="notifyBtn" class="btn small" type="button" hidden>Уведомления в браузере</button>
+        </div>
+        <ul id="alertList" class="list"></ul>
+        <p id="alertEmpty" class="empty" hidden>Пока оповещений нет.</p>
+      </div>
+
+      <div class="card">
+        <h2>Каналы <span id="chanCount" class="muted small"></span></h2>
+        <label class="field search">
+          <span>Поиск по нику</span>
+          <input id="chanSearch" type="text" autocomplete="off" spellcheck="false" placeholder="ник канала">
+        </label>
+        <ul id="chanList" class="list"></ul>
+        <p id="chanEmpty" class="empty" hidden></p>
+      </div>
+
+      <form id="limitsForm" class="card" novalidate>
+        <h2>Лимиты</h2>
+        <p class="muted">Применяются ботом сразу, без перезапуска. Пустое поле: бот использует значение по умолчанию из своих настроек (подсказка в поле).</p>
+        <div class="grid4">
+          <label class="field tall">
+            <span>Максимум каналов</span>
+            <input id="limMaxChannels" type="text" inputmode="numeric" autocomplete="off">
+          </label>
+          <label class="field tall">
+            <span>Команд на канал</span>
+            <input id="limMaxCommands" type="text" inputmode="numeric" autocomplete="off">
+          </label>
+          <label class="field tall">
+            <span>Авто-сообщений на канал</span>
+            <input id="limMaxTimers" type="text" inputmode="numeric" autocomplete="off">
+          </label>
+          <label class="field tall">
+            <span>Отключать после N дней тишины в чате (0: не отключать)</span>
+            <input id="limInactiveDays" type="text" inputmode="numeric" autocomplete="off">
+          </label>
+        </div>
+        <p id="limitsNote" class="hint"></p>
+        <p id="limitsError" class="error" hidden></p>
+        <button id="limitsSave" class="btn primary" type="submit">Сохранить лимиты</button>
+      </form>
     </section>
   </main>
 

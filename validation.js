@@ -1,5 +1,5 @@
 // Чистая логика без браузера и Firebase: проверки полей (зеркало database.rules.json),
-// работа со списком авто-сообщений и разбор ответа Twitch. Тестируется в Node.
+// работа со списком авто-сообщений, разбор ответа Twitch и данные админ-панели. Тестируется в Node.
 
 export const LIMITS = {
   nameMin: 3,
@@ -157,6 +157,117 @@ export function normalizeChannel(raw) {
       .sort(([a], [b]) => a.localeCompare(b, 'ru')),
     timers: timersToList(raw.timers),
   };
+}
+
+// ---------- Админ-панель ----------
+
+// Границы лимитов (те же числа в database.rules.json и в bot.js).
+export const ADMIN_LIMITS = {
+  maxChannels: { min: 1, max: 1000, label: 'Максимум каналов' },
+  maxCommands: { min: 1, max: 200, label: 'Максимум команд на канал' },
+  maxTimers: { min: 1, max: 20, label: 'Максимум авто-сообщений на канал' },
+  inactiveDays: { min: 0, max: 365, label: 'Отключать после N дней тишины (0 = не отключать)' },
+};
+
+// Пустое поле = "значение по умолчанию из настроек бота" (value: null, ключ из базы удаляется).
+export function validateAdminLimit(key, input) {
+  const spec = ADMIN_LIMITS[key];
+  if (!spec) return fail('Неизвестная настройка.');
+  const raw = String(input ?? '').trim();
+  if (raw === '') return ok(null);
+  if (!/^\d+$/.test(raw)) return fail(`${spec.label}: целое число от ${spec.min} до ${spec.max}.`);
+  const n = Number(raw);
+  if (n < spec.min || n > spec.max) return fail(`${spec.label}: от ${spec.min} до ${spec.max}.`);
+  return ok(n);
+}
+
+// "3 мин назад", "5 ч назад" и т. д. diffMs = сколько миллисекунд прошло.
+export function formatAgo(diffMs) {
+  if (!Number.isFinite(diffMs)) return '—';
+  const s = Math.floor(diffMs / 1000);
+  if (s < 45) return 'только что';
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${Math.max(m, 1)} мин назад`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} ч назад`;
+  return `${Math.floor(h / 24)} дн. назад`;
+}
+
+// Длительность: "2 д 3 ч", "5 ч 12 мин", "7 мин", "20 с".
+export function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const s = Math.floor(ms / 1000);
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d) return `${d} д ${h} ч`;
+  if (h) return `${h} ч ${m} мин`;
+  if (m) return `${m} мин`;
+  return `${s} с`;
+}
+
+// Оповещения из admin/status: массив или объект с ключами, новые первыми.
+export function alertsOf(status) {
+  const raw = status && status.alerts;
+  if (!raw || typeof raw !== 'object') return [];
+  return Object.values(raw)
+    .filter((a) => a && typeof a.text === 'string')
+    .map((a) => ({
+      at: Number.isFinite(a.at) ? a.at : 0,
+      kind: String(a.kind || ''),
+      level: ['info', 'warn', 'error'].includes(a.level) ? a.level : 'warn',
+      text: a.text,
+    }))
+    .sort((a, b) => b.at - a.at);
+}
+
+// Бот считается онлайн, если сигнал (heartbeat) приходил не позже, чем 3 интервала назад.
+export function botOnline(status, serverNowMs) {
+  if (!status || !Number.isFinite(status.heartbeatAt)) return false;
+  const sec = Number.isFinite(status.heartbeatSec) && status.heartbeatSec > 0 ? status.heartbeatSec : 60;
+  return serverNowMs - status.heartbeatAt <= 3 * sec * 1000;
+}
+
+// Список каналов для админ-панели: канал + статистика + блокировка + итоговый статус.
+// status: 'blocked' | 'auto-off' (отключён из-за неактивности) | 'off' (выключен) | 'active'
+export function buildAdminRows(channelsRaw, statsRaw, blockedRaw) {
+  const channels = channelsRaw && typeof channelsRaw === 'object' ? channelsRaw : {};
+  const stats = statsRaw && typeof statsRaw === 'object' ? statsRaw : {};
+  const blocked = blockedRaw && typeof blockedRaw === 'object' ? blockedRaw : {};
+  const int = (v) => (Number.isFinite(v) && v >= 0 ? v : 0);
+
+  const rows = [];
+  for (const [nick, raw] of Object.entries(channels)) {
+    const ch = normalizeChannel(raw);
+    if (!ch) continue;
+    const s = stats[nick] && typeof stats[nick] === 'object' ? stats[nick] : {};
+    const b = blocked[nick] ? (typeof blocked[nick] === 'object' ? blocked[nick] : {}) : null;
+    const stat = {
+      since: int(s.since),
+      lastMessageAt: int(s.lastMessageAt),
+      messages: int(s.messages),
+      rank: int(s.rank),
+      cmd: int(s.cmd),
+      autoDisabledAt: int(s.autoDisabledAt),
+    };
+    let status = 'active';
+    if (b) status = 'blocked';
+    else if (!ch.enabled) status = stat.autoDisabledAt ? 'auto-off' : 'off';
+    rows.push({
+      nick,
+      name: ch.name,
+      tag: ch.tag,
+      region: ch.region,
+      enabled: ch.enabled,
+      commands: ch.commands.length,
+      timers: ch.timers.length,
+      stat,
+      blocked: b ? { reason: typeof b.reason === 'string' ? b.reason : '', at: int(b.at) } : null,
+      status,
+      lastActivity: Math.max(stat.lastMessageAt, stat.since),
+    });
+  }
+  return rows.sort((a, b) => a.nick.localeCompare(b.nick));
 }
 
 // ---------- Twitch ----------
