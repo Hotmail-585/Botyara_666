@@ -108,15 +108,45 @@
     </section>
 
     <!-- Канал не подключён к боту -->
-    <section id="view-nochannel" class="view card" hidden>
-      <h2>Бот ещё не подключён к вашему каналу</h2>
-      <p>Сначала напишите в чате бота<span class="botname"></span>:</p>
-      <p><code>!join Ник#Тег eu</code></p>
-      <p class="muted">Вместо <em>Ник#Тег</em> укажите свой аккаунт Valorant, например <code>!join Player#1234 eu</code>. Эта страница обновится сама, когда бот подключится.</p>
+    <section id="view-nochannel" class="view" hidden>
+      <form id="joinForm" class="card" novalidate>
+        <h2>Подключить бота к вашему каналу</h2>
+        <p class="muted">Укажите аккаунт Valorant, ранг которого бот будет показывать по команде <code>!rank</code>. Бот подключится к вашему Twitch-каналу сам.</p>
+        <div class="grid3">
+          <label class="field">
+            <span>Ник</span>
+            <input id="jName" type="text" maxlength="16" autocomplete="off" spellcheck="false" placeholder="Player">
+          </label>
+          <label class="field">
+            <span>Тег (после #)</span>
+            <input id="jTag" type="text" maxlength="6" autocomplete="off" spellcheck="false" placeholder="1234">
+          </label>
+          <label class="field">
+            <span>Регион</span>
+            <select id="jRegion">
+              <option value="eu">eu: Европа</option>
+              <option value="na">na: Северная Америка</option>
+              <option value="ap">ap: Азия и Океания</option>
+              <option value="kr">kr: Корея</option>
+            </select>
+          </label>
+        </div>
+        <p id="jError" class="error" hidden></p>
+        <p id="jStatus" class="hint" hidden></p>
+        <button id="jSave" class="btn primary" type="submit">Подключить бота</button>
+        <p class="hint">Можно и по-старому: написать в чате бота<span class="botname"></span> <code>!join Ник#Тег eu</code>. Эта страница обновится сама.</p>
+      </form>
     </section>
 
     <!-- Кабинет -->
     <section id="view-dashboard" class="view" hidden>
+      <!-- Подсказка после подключения -->
+      <div id="modHint" class="card hint-card" hidden>
+        <h2>Последний шаг: выдайте боту модератора</h2>
+        <p>Бот подключён к вашему каналу. Чтобы он писал без ограничений Twitch, напишите в своём чате: <code id="modCmd">/mod бот</code></p>
+        <button id="modHintClose" class="btn small" type="button">Понятно</button>
+      </div>
+
       <!-- Бот включён -->
       <div class="card row between">
         <div>

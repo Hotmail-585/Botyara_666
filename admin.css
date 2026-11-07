@@ -66,3 +66,6 @@ main.wrap.wide { max-width: 980px; }
 @media (max-width: 760px) { .grid4 { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 420px) { .grid4 { grid-template-columns: 1fr; } }
 .field.tall > span { min-height: 2.6em; align-items: flex-start; }
+
+/* Подсказка после подключения бота */
+.hint-card { border-color: var(--ok); }

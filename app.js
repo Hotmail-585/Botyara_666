@@ -61,6 +61,9 @@ function freshState() {
     adminTimer: null,
     admin: null,
     dirtyLimits: false,
+    // подключение бота через сайт
+    joining: null,             // { id, timer, unsub } пока ждём ответ бота
+    showModHint: false,        // показать подсказку «выдайте боту модератора»
   };
 }
 
@@ -269,6 +272,7 @@ async function unlinkTwitch() {
 
 function teardown() {
   if (!S) return;
+  endJoin();
   clearTimeout(S.linkTimer);
   try { S.unsubUser?.(); } catch { /* */ }
   try { S.unsubChannel?.(); } catch { /* */ }
@@ -315,6 +319,7 @@ function onUnlinked() {
   if (S.nick) { // связь пропала на лету: начинаем заново
     try { S.unsubChannel?.(); } catch { /* */ }
     stopAdmin();
+    endJoin();
     S.nick = null;
     S.channel = undefined;
     S.editingCmd = null;
@@ -369,6 +374,105 @@ function subscribeChannel() {
       showFatal('Нет доступа к настройкам канала (' + (err?.code || err?.message) + '). Попробуйте выйти и войти заново.');
     },
   );
+}
+
+// ---------- Подключение бота через сайт ----------
+
+const JOIN_WAIT_MS = 25 * 1000;
+const JOIN_MESSAGES = {
+  notfound: 'Аккаунт Valorant не найден. Проверьте ник и тег.',
+  ratelimit: 'Сервис рангов сейчас перегружен. Попробуйте через минуту.',
+  apierror: 'Не удалось проверить аккаунт Valorant. Попробуйте позже.',
+  blocked: 'Бот недоступен для вашего канала.',
+  full: 'Свободных мест у бота пока нет. Попробуйте позже.',
+  notlinked: 'Twitch не привязан к этому входу. Выйдите и привяжите Twitch заново.',
+  badformat: 'Проверьте ник, тег и регион.',
+  expired: 'Заявка устарела. Попробуйте ещё раз.',
+  busy: 'Бот сейчас занят. Попробуйте через минуту.',
+  error: 'Боту не удалось подключиться. Попробуйте позже.',
+};
+
+function setJoinBusy(busy, text = '') {
+  for (const id of ['jName', 'jTag', 'jRegion', 'jSave']) $(id).disabled = busy;
+  const st = $('jStatus');
+  st.textContent = text;
+  st.hidden = !text;
+}
+
+// Прекращает ожидание ответа бота (таймер и подписка на joinResults).
+function endJoin() {
+  const j = S?.joining;
+  if (!j) return;
+  clearTimeout(j.timer);
+  try { j.unsub?.(); } catch { /* */ }
+  S.joining = null;
+  setJoinBusy(false);
+}
+
+function renderModHint() {
+  const name = String(config.botName || '').replace(/[^A-Za-z0-9_]/g, '');
+  $('modCmd').textContent = '/mod ' + (name || 'имя_бота');
+  $('modHint').hidden = !S?.showModHint;
+}
+
+async function onJoinSubmit(ev) {
+  ev.preventDefault();
+  if (!S || S.joining) return;
+  const n = validateValorantName($('jName').value);
+  const t = validateTag($('jTag').value);
+  const r = validateRegion($('jRegion').value);
+  const bad = [n, t, r].find((x) => !x.ok);
+  if (bad) { setError('jError', bad.error); return; }
+  setError('jError', '');
+
+  const sid = S.id;
+  const uid = S.uid;
+  const id = makeState(crypto.getRandomValues(new Uint8Array(12)));
+  const job = { id, timer: null, unsub: null };
+  S.joining = job;
+  setJoinBusy(true, 'Подключаем бота… обычно это занимает несколько секунд.');
+
+  job.unsub = onValue(
+    ref(db, `joinResults/${uid}`),
+    (snap) => {
+      if (!S || S.id !== sid || S.joining !== job) return;
+      const v = snap.val();
+      if (!v || v.id !== id) return;              // ответ на какую-то прошлую заявку
+      endJoin();
+      if (v.code === 'ok') {
+        S.showModHint = true;
+        renderModHint();
+        toast('Бот подключён к вашему каналу', 'ok');
+      } else if (v.code === 'exists') {
+        toast('Бот уже подключён к вашему каналу', 'ok');
+      } else {
+        setError('jError', JOIN_MESSAGES[v.code] || JOIN_MESSAGES.error);
+      }
+    },
+    (err) => {
+      console.error(err);
+      if (!S || S.id !== sid || S.joining !== job) return;
+      endJoin();
+      setError('jError', friendlyError(err, 'Нет доступа к ответу бота. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'));
+    },
+  );
+  job.timer = setTimeout(() => {
+    if (!S || S.id !== sid || S.joining !== job) return;
+    endJoin();
+    if (S.channel === null) setError('jError', 'Бот не ответил. Возможно, он сейчас выключен. Попробуйте ещё раз позже.');
+  }, JOIN_WAIT_MS);
+
+  try {
+    await set(ref(db, `joinRequests/${uid}`), {
+      id, name: n.value, tag: t.value, region: r.value, createdAt: serverTimestamp(),
+    });
+  } catch (e) {
+    console.error(e);
+    if (S && S.id === sid && S.joining === job) {
+      endJoin();
+      setError('jError', friendlyError(e, 'Сервер отклонил заявку. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'));
+    }
+  }
 }
 
 // ---------- Вкладки и выбор экрана ----------
@@ -816,6 +920,7 @@ function renderDashboard() {
     $('vRegion').value = ch.region;
   }
 
+  renderModHint();
   renderCommands(ch);
   renderTimers(ch);
 }
@@ -1097,6 +1202,9 @@ function bindUi() {
 
   $('tabCabinet').addEventListener('click', () => setTab('cabinet'));
   $('tabAdmin').addEventListener('click', () => setTab('admin'));
+
+  $('joinForm').addEventListener('submit', onJoinSubmit);
+  $('modHintClose').addEventListener('click', () => { if (S) S.showModHint = false; renderModHint(); });
 
   $('enabledToggle').addEventListener('change', onEnabledChange);
   $('valorantForm').addEventListener('submit', onValorantSubmit);
