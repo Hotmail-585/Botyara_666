@@ -2,7 +2,7 @@
 // Версия Firebase JS SDK зафиксирована в импортах ниже (одна и та же во всех трёх).
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
 import {
-  getAuth, signInAnonymously, onAuthStateChanged, signOut,
+  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import {
   getDatabase, ref, onValue, set, update, runTransaction, serverTimestamp,
@@ -19,7 +19,7 @@ import {
 } from './validation.js';
 
 const $ = (id) => document.getElementById(id);
-const VIEWS = ['loading', 'error', 'login', 'linking', 'linkfail', 'nochannel', 'dashboard', 'admin'];
+const VIEWS = ['loading', 'error', 'login', 'connect', 'linking', 'linkfail', 'nochannel', 'dashboard', 'admin'];
 const STATE_KEY = 'twitch_oauth_state';
 const TAB_KEY = 'bot_tab';
 const BASE_TITLE = document.title;
@@ -41,6 +41,7 @@ function freshState() {
   return {
     id: Date.now() + Math.random(),
     uid: null,
+    email: '',                 // почта аккаунта Google (для подписи, пока Twitch не привязан)
     nick: null,
     channel: undefined,        // undefined = ещё не загружен, null = канала нет
     pendingToken: null,
@@ -68,7 +69,8 @@ function freshState() {
 function showView(name) {
   for (const v of VIEWS) $('view-' + v).hidden = v !== name;
   const inCabinet = name === 'dashboard' || name === 'nochannel' || name === 'admin';
-  $('userbox').hidden = !inCabinet || !S?.nick;
+  $('userbox').hidden = !(name === 'connect' || (inCabinet && S?.nick));
+  $('unlinkBtn').hidden = !S?.nick;
   $('tabs').hidden = !(inCabinet && S?.isAdmin && S?.nick);
   $('main').classList.toggle('wide', name === 'admin');
   renderTabs();
@@ -197,7 +199,7 @@ function consumeTwitchReturn() {
 function authErrorText(e) {
   const code = String(e?.code || '');
   if (/operation-not-allowed|admin-restricted/.test(code)) {
-    return 'В Firebase не включён анонимный вход. Откройте Authentication → Sign-in method и включите «Anonymous».';
+    return 'В Firebase не включён вход через Google. Откройте Authentication → Sign-in method и включите «Google».';
   }
   if (/unauthorized-domain/.test(code)) {
     return 'Адрес сайта не добавлен в Firebase: Authentication → Settings → Authorized domains.';
@@ -219,17 +221,50 @@ async function startSession(pendingToken = null) {
   showView('loading');
   $('loadingText').textContent = 'Загрузка…';
   const sid = S.id;
+  let user;
   try {
-    let user = await currentUserOnce();
-    if (!user) user = (await signInAnonymously(auth)).user;
-    if (!S || S.id !== sid) return;
-    S.uid = user.uid;
+    user = await currentUserOnce();
   } catch (e) {
     console.error(e);
     showFatal(authErrorText(e));
     return;
   }
+  if (!S || S.id !== sid) return;
+  if (!user) {                       // не вошли через Google
+    S.pendingToken = null;
+    showView('login');
+    if (pendingToken) toast('Сессия Google не найдена. Войдите через Google и привяжите Twitch ещё раз.', 'err');
+    return;
+  }
+  S.uid = user.uid;
+  S.email = user.email || '';
+  $('userNick').textContent = S.email;
   subscribeUser();
+}
+
+async function startGoogleLogin() {
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  } catch (e) {
+    const code = String(e?.code || '');
+    if (/popup-closed-by-user|cancelled-popup-request/.test(code)) return;
+    console.error(e);
+    if (/popup-blocked/.test(code)) toast('Браузер заблокировал окно входа Google. Разрешите всплывающие окна для этого сайта.', 'err');
+    else toast(authErrorText(e), 'err');
+    return;
+  }
+  await startSession(null);
+}
+
+// Отвязка: пользователь сам удаляет свою связь с Twitch-каналом (правила разрешают только удаление своих записей).
+async function unlinkTwitch() {
+  if (!S?.nick) return;
+  if (!confirm(`Отвязать Twitch-канал ${S.nick} от этого входа Google?\n\nНастройки бота на канале останутся. Привязать Twitch можно будет снова.`)) return;
+  const { nick, uid } = S;
+  await save(
+    () => update(ref(db), { [`users/${uid}`]: null, [`links/${nick}/${uid}`]: null }),
+    'Twitch отвязан',
+  );
 }
 
 function teardown() {
@@ -282,9 +317,13 @@ function onUnlinked() {
     stopAdmin();
     S.nick = null;
     S.channel = undefined;
+    S.editingCmd = null;
+    S.editingTimer = null;
+    S.dirtyValorant = S.dirtyInterval = false;
+    $('userNick').textContent = S.email;
   }
   if (S.pendingToken) { sendLink(); return; }
-  if (!S.linking) showView('login');
+  if (!S.linking) showView('connect');
 }
 
 async function sendLink() {
@@ -1049,7 +1088,9 @@ function fillBotName() {
 // ---------- Запуск ----------
 
 function bindUi() {
-  $('loginBtn').addEventListener('click', startLogin);
+  $('googleBtn').addEventListener('click', startGoogleLogin);
+  $('connectBtn').addEventListener('click', startLogin);
+  $('unlinkBtn').addEventListener('click', unlinkTwitch);
   $('linkRetry').addEventListener('click', startLogin);
   $('errorRetry').addEventListener('click', () => location.reload());
   $('logoutBtn').addEventListener('click', logout);

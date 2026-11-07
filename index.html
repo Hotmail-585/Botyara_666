@@ -16,6 +16,7 @@
       <div class="brand">Кабинет бота</div>
       <div id="userbox" class="userbox" hidden>
         <span id="userNick" class="usernick"></span>
+        <button id="unlinkBtn" class="btn ghost small" type="button" hidden>Отвязать Twitch</button>
         <button id="logoutBtn" class="btn ghost small" type="button">Выйти</button>
       </div>
     </div>
@@ -48,8 +49,8 @@
       <div class="card hero">
         <h1>Управляйте ботом на своём канале</h1>
         <p class="muted">Ранг Valorant в чате, свои команды и авто-сообщения: всё настраивается здесь, а изменения сразу попадают в бота.</p>
-        <button id="loginBtn" class="btn twitch" type="button">Войти через Twitch</button>
-        <p class="hint">Сайт узнаёт только ваш Twitch-ник. Доступ к аккаунту и пароль ему не нужны.</p>
+        <button id="googleBtn" class="btn primary google" type="button">Войти через Google</button>
+        <p class="hint">Google нужен только как ключ от кабинета: так вы заходите с любого устройства. Затем вы один раз привяжете Twitch, и сайт узнает только ваш Twitch-ник. Доступ к аккаунтам и пароли ему не нужны.</p>
       </div>
 
       <div class="card">
@@ -62,7 +63,7 @@
             Здесь <em>Ник#Тег</em>: ваш аккаунт Valorant, а <em>eu</em>: регион (eu, na, ap или kr).
             Например: <code>!join Player#1234 eu</code>
           </li>
-          <li><strong>Нажмите «Войти через Twitch»</strong> на этой странице. Кабинет откроется, как только бот увидит ваш вход.</li>
+          <li><strong>Нажмите «Войти через Google»</strong> на этой странице, затем «Привязать Twitch». Кабинет откроется, как только бот увидит вашу привязку.</li>
           <li><strong>Настройте всё здесь:</strong> аккаунт Valorant, команды и авто-сообщения.</li>
         </ol>
         <details>
@@ -82,6 +83,14 @@
           <p class="muted">Кабинет появляется только после того, как бот подключился к вашему каналу. Напишите <code>!join Ник#Тег</code> в чате бота и подождите несколько секунд, страница обновится сама.</p>
         </details>
       </div>
+    </section>
+
+    <!-- Вошли через Google, Twitch ещё не привязан -->
+    <section id="view-connect" class="view card" hidden>
+      <h2>Привяжите свой Twitch</h2>
+      <p class="muted">Вы вошли через Google. Осталось один раз подтвердить свой Twitch-канал: так бот узнает, чей это кабинет. После этого на любом устройстве хватит входа через Google.</p>
+      <p class="muted small">Перед этим бот должен быть подключён к вашему каналу: напишите в чате бота<span class="botname"></span> <code>!join Ник#Тег eu</code>.</p>
+      <button id="connectBtn" class="btn twitch" type="button">Привязать Twitch</button>
     </section>
 
     <!-- Ожидание привязки -->
@@ -216,7 +225,7 @@
       </div>
 
       <div class="card muted small">
-        <p>«Выйти» закрывает кабинет только на этом устройстве. Бот и все настройки остаются как есть. Чтобы вернуться, войдите через Twitch снова. Отключить бота от канала можно командой <code>!leave</code> в чате бота.</p>
+        <p>«Выйти» закрывает кабинет только на этом устройстве. Бот и все настройки остаются как есть. Чтобы вернуться, войдите через Google снова. «Отвязать Twitch» разрывает связь кабинета с вашим Twitch-каналом (настройки бота остаются). Отключить бота от канала можно командой <code>!leave</code> в чате бота.</p>
       </div>
     </section>
 
