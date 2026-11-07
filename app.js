@@ -952,7 +952,7 @@ function renderTimers(ch) {
 
   if (!S.dirtyInterval) $('tInterval').value = ch.timerInterval == null ? '' : String(ch.timerInterval);
   $('intervalNote').textContent = ch.timerInterval == null
-    ? 'Сейчас используется интервал по умолчанию, заданный в боте. Чтобы задать свой, введите число минут от 1 до 1440.'
+    ? 'Сейчас используется интервал по умолчанию (30 мин.), заданный в боте. Чтобы задать свой, введите число минут от 1 до 1440.'
     : `Бот пишет одно сообщение раз в ${ch.timerInterval} мин. (если в чате есть активность). Пустое поле = интервал по умолчанию.`;
 
   const list = $('timerList');
