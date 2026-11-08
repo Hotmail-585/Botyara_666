@@ -14,7 +14,12 @@ export const LIMITS = {
 };
 
 // Встроенные команды бота: свои команды с такими именами бот, скорее всего, не вызовет.
-export const RESERVED_COMMANDS = ['!rank', '!setrank', '!join', '!leave'];
+export const RESERVED_COMMANDS = [
+  '!rank', '!setrank', '!join', '!leave',
+  '!ранг', '!peak', '!lastgame', '!today', '!сегодня', '!acc', '!addacc', '!delacc',
+  '!8ball', '!dice', '!coin', '!duel', '!games',
+];
+export const MAX_ACCOUNTS = 5;   // основной + до 4 дополнительных
 
 const ok = (value) => ({ ok: true, value });
 const fail = (error) => ({ ok: false, error });
@@ -156,7 +161,43 @@ export function normalizeChannel(raw) {
       .filter(([, v]) => typeof v === 'string')
       .sort(([a], [b]) => a.localeCompare(b, 'ru')),
     timers: timersToList(raw.timers),
+    games: raw.games === true,
+    accounts: accountsToList(raw.accounts),
+    activeAccount: Number.isInteger(raw.activeAccount) && raw.activeAccount >= 1 && raw.activeAccount <= MAX_ACCOUNTS ? raw.activeAccount : 1,
   };
+}
+
+// ---------- Аккаунты Valorant, модераторы, предпросмотр ----------
+
+// Дополнительные аккаунты: массив или объект с ключами 0..3 -> плотный список {name, tag, region}.
+export function accountsToList(raw) {
+  if (raw == null || typeof raw !== 'object') return [];
+  const entries = Array.isArray(raw) ? raw.map((v, i) => [i, v]) : Object.entries(raw).map(([k, v]) => [Number(k), v]);
+  return entries
+    .filter(([k, v]) => Number.isInteger(k) && v && typeof v.name === 'string' && typeof v.tag === 'string')
+    .sort((a, b) => a[0] - b[0])
+    .map(([, v]) => ({ name: v.name, tag: v.tag, region: LIMITS.regions.includes(v.region) ? v.region : 'eu' }))
+    .slice(0, MAX_ACCOUNTS - 1);
+}
+
+// Список -> объект {"0": {...}} или null (пустой список = удалить узел).
+export function listToAccounts(list) {
+  if (!list.length) return null;
+  const obj = {};
+  list.forEach((a, i) => { obj[String(i)] = { name: a.name, tag: a.tag, region: a.region }; });
+  return obj;
+}
+
+// Ник модератора Twitch: без @, строчными, 3..25 символов a-z 0-9 _.
+export function validateModLogin(input) {
+  const v = String(input ?? '').trim().replace(/^@/, '').toLowerCase();
+  if (!/^[a-z0-9_]{3,25}$/.test(v)) return fail('Ник Twitch: от 3 до 25 символов a-z, 0-9 и _.');
+  return ok(v);
+}
+
+// Предпросмотр: так сообщение увидят в чате ({user} -> ник зрителя).
+export function renderPreview(text, user = 'Зритель') {
+  return String(text ?? '').replace(/\{user\}/gi, user);
 }
 
 // ---------- Админ-панель ----------

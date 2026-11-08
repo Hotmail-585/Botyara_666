@@ -69,3 +69,18 @@ main.wrap.wide { max-width: 980px; }
 
 /* Подсказка после подключения бота */
 .hint-card { border-color: var(--ok); }
+
+/* Переключатель каналов, предпросмотр, модераторы */
+.chanbar { margin-bottom: 16px; }
+.chanbar .field { margin: 0; }
+.field.grow { flex: 1 1 220px; }
+.preview {
+  margin: 4px 0 12px; padding: 10px 12px; border: 1px dashed var(--border);
+  border-radius: 10px; background: var(--panel);
+}
+.chat-line { margin: 2px 0; overflow-wrap: anywhere; }
+.chat-line .who { font-weight: 700; margin-right: 6px; }
+.chat-line.bot .who { color: var(--accent); }
+.chat-line.viewer .who { color: var(--muted); }
+.item .pill { margin-left: 8px; }
+.item-name .pill { margin-left: 8px; }

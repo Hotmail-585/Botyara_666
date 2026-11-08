@@ -14,6 +14,7 @@ import {
   validateValorantName, validateTag, validateRegion, validateCommandName,
   validateMessageText, validateInterval,
   normalizeChannel, timersAdd, timersEdit, timersRemove,
+  accountsToList, listToAccounts, validateModLogin, renderPreview, MAX_ACCOUNTS,
   parseTwitchHash, buildTwitchAuthUrl, makeState,
   validateAdminLimit, formatAgo, formatDuration, alertsOf, botOnline, buildAdminRows,
 } from './validation.js';
@@ -64,12 +65,25 @@ function freshState() {
     // подключение бота через сайт
     joining: null,             // { id, timer, unsub } пока ждём ответ бота
     showModHint: false,        // показать подсказку «выдайте боту модератора»
+    // модераторы кабинета и переключатель каналов
+    active: null,              // ник канала, которым управляем сейчас (свой или тот, куда добавили модератором)
+    access: [],                // каналы, куда нас добавили модератором (modAccess/{ник})
+    accessLoaded: false,
+    autoLanded: false,         // у модератора без своего канала автоматически открыть первый доступный (один раз)
+    unsubAccess: null,
+    mods: null,                // наши модераторы (channelMods/{ник}), только для владельца
+    unsubMods: null,
+    testing: false,            // идёт тест: ждём ответ бота
   };
 }
 
 // ---------- Вспомогательное ----------
 
+let currentView = 'loading';
+function isOwn() { return !!S && S.active === S.nick; }
+
 function showView(name) {
+  currentView = name;
   for (const v of VIEWS) $('view-' + v).hidden = v !== name;
   const inCabinet = name === 'dashboard' || name === 'nochannel' || name === 'admin';
   $('userbox').hidden = !(name === 'connect' || (inCabinet && S?.nick));
@@ -77,6 +91,26 @@ function showView(name) {
   $('tabs').hidden = !(inCabinet && S?.isAdmin && S?.nick);
   $('main').classList.toggle('wide', name === 'admin');
   renderTabs();
+  renderChanBar();
+}
+
+// Выбор канала: виден, только если нас добавили модератором чужого канала.
+function renderChanBar() {
+  const bar = $('chanBar');
+  const show = !!S && !!S.nick && S.access.length > 0 && (currentView === 'dashboard' || currentView === 'nochannel');
+  bar.hidden = !show;
+  if (!show) return;
+  const sel = $('chanSelect');
+  const options = [S.nick, ...S.access];
+  const key = options.join(',');
+  if (sel.dataset.key !== key) {
+    sel.dataset.key = key;
+    sel.replaceChildren(...options.map((n) => el('option', { value: n, text: n === S.nick ? `${n} (мой канал)` : n })));
+  }
+  sel.value = S.active;
+  $('chanBarNote').textContent = isOwn()
+    ? 'Вас добавили модератором на других каналах: выберите канал, чтобы управлять ботом там.'
+    : `Вы управляете каналом ${S.active} как модератор: можно править команды, авто-сообщения, аккаунты Valorant и игры.`;
 }
 
 let toastTimer = null;
@@ -136,7 +170,7 @@ async function save(fn, okMsg, permHint) {
   }
 }
 
-function channelRef() { return ref(db, `channels/${S.nick}`); }
+function channelRef() { return ref(db, `channels/${S.active}`); }
 
 // ---------- Настройки и запуск ----------
 
@@ -276,6 +310,7 @@ function teardown() {
   clearTimeout(S.linkTimer);
   try { S.unsubUser?.(); } catch { /* */ }
   try { S.unsubChannel?.(); } catch { /* */ }
+  stopAccess();
   S.unsubUser = S.unsubChannel = null;
   stopAdmin();
   S.id = null;
@@ -307,20 +342,26 @@ function onLinked(nick) {
   S.pendingToken = null;
   if (S.nick === nick) return;
   S.nick = nick;
+  S.active = nick;
   $('userNick').textContent = nick;
   S.channel = undefined;
   $('loadingText').textContent = 'Загружаем настройки…';
   showView('loading');
   subscribeChannel();
   subscribeAdminFlag();
+  subscribeAccess();
+  subscribeMods();
 }
 
 function onUnlinked() {
   if (S.nick) { // связь пропала на лету: начинаем заново
     try { S.unsubChannel?.(); } catch { /* */ }
     stopAdmin();
+    stopAccess();
     endJoin();
     S.nick = null;
+    S.active = null;
+    S.autoLanded = false;
     S.channel = undefined;
     S.editingCmd = null;
     S.editingTimer = null;
@@ -356,24 +397,123 @@ async function sendLink() {
 
 function subscribeChannel() {
   const sid = S.id;
-  const nick = S.nick;
+  const nick = S.active;
+  try { S.unsubChannel?.(); } catch { /* */ }
   S.unsubChannel = onValue(
     ref(db, `channels/${nick}`),
     (snap) => {
-      if (!S || S.id !== sid || S.nick !== nick) return;
+      if (!S || S.id !== sid || S.active !== nick) return;
       S.channel = normalizeChannel(snap.val());
       if (!S.channel) {
         S.editingCmd = null;
         S.editingTimer = null;
+        if (nick !== S.nick) {          // чужой канал удалили
+          toast(`Канал ${nick} больше недоступен. Открыт ваш канал.`, 'err');
+          switchChannel(S.nick);
+          return;
+        }
       }
       route();
+      maybeAutoLand();
+    },
+    (err) => {
+      console.error(err);
+      if (!S || S.id !== sid || S.active !== nick) return;
+      if (nick !== S.nick) {            // доступ модератора отозвали
+        toast(`Нет доступа к каналу ${nick}. Возможно, владелец убрал вас из модераторов.`, 'err');
+        switchChannel(S.nick);
+        return;
+      }
+      showFatal('Нет доступа к настройкам канала (' + (err?.code || err?.message) + '). Попробуйте выйти и войти заново.');
+    },
+  );
+}
+
+// Переключение на другой канал (свой или тот, где мы модератор кабинета).
+function switchChannel(nick) {
+  if (!S || !S.nick || S.active === nick) return;
+  S.active = nick;
+  S.channel = undefined;
+  S.editingCmd = null;
+  S.editingTimer = null;
+  S.dirtyValorant = S.dirtyInterval = false;
+  resetCommandForm();
+  resetTimerForm();
+  setError('accError', '');
+  setError('vError', '');
+  subscribeChannel();
+  route();
+}
+
+// Модератор без собственного канала при первом входе сразу попадает на первый доступный канал.
+function maybeAutoLand() {
+  if (!S || S.autoLanded || !S.accessLoaded || !isOwn() || S.channel !== null || !S.access.length) return;
+  S.autoLanded = true;
+  switchChannel(S.access[0]);
+}
+
+const LOGIN_RE = /^[a-z0-9_]{3,25}$/;
+function loginsOf(v, except) {
+  return v && typeof v === 'object'
+    ? Object.keys(v).filter((k) => v[k] === true && LOGIN_RE.test(k) && k !== except).sort()
+    : [];
+}
+
+// Каналы, куда нас добавили модератором: modAccess/{наш ник}.
+function subscribeAccess() {
+  const sid = S.id;
+  const nick = S.nick;
+  S.unsubAccess = onValue(
+    ref(db, `modAccess/${nick}`),
+    (snap) => {
+      if (!S || S.id !== sid || S.nick !== nick) return;
+      S.access = loginsOf(snap.val(), nick);
+      S.accessLoaded = true;
+      if (!isOwn() && !S.access.includes(S.active)) {
+        toast(`Доступ к каналу ${S.active} закрыт. Открыт ваш канал.`, 'err');
+        switchChannel(nick);
+      }
+      maybeAutoLand();
+      renderChanBar();
     },
     (err) => {
       console.error(err);
       if (!S || S.id !== sid) return;
-      showFatal('Нет доступа к настройкам канала (' + (err?.code || err?.message) + '). Попробуйте выйти и войти заново.');
+      S.access = [];
+      S.accessLoaded = true;
+      renderChanBar();
     },
   );
+}
+
+// Наши модераторы: channelMods/{наш ник} (читает только владелец).
+function subscribeMods() {
+  const sid = S.id;
+  const nick = S.nick;
+  S.unsubMods = onValue(
+    ref(db, `channelMods/${nick}`),
+    (snap) => {
+      if (!S || S.id !== sid || S.nick !== nick) return;
+      S.mods = loginsOf(snap.val(), null);
+      renderMods();
+    },
+    (err) => {
+      console.error(err);
+      if (!S || S.id !== sid) return;
+      S.mods = null;
+      renderMods();
+    },
+  );
+}
+
+function stopAccess() {
+  if (!S) return;
+  try { S.unsubAccess?.(); } catch { /* */ }
+  try { S.unsubMods?.(); } catch { /* */ }
+  S.unsubAccess = S.unsubMods = null;
+  S.access = [];
+  S.accessLoaded = false;
+  S.mods = null;
 }
 
 // ---------- Подключение бота через сайт ----------
@@ -412,7 +552,7 @@ function endJoin() {
 function renderModHint() {
   const name = String(config.botName || '').replace(/[^A-Za-z0-9_]/g, '');
   $('modCmd').textContent = '/mod ' + (name || 'имя_бота');
-  $('modHint').hidden = !S?.showModHint;
+  $('modHint').hidden = !S?.showModHint || !isOwn();
 }
 
 async function onJoinSubmit(ev) {
@@ -920,9 +1060,16 @@ function renderDashboard() {
     $('vRegion').value = ch.region;
   }
 
+  // Игры
+  $('gamesToggle').checked = ch.games;
+  $('gamesLabel').textContent = ch.games ? 'Включены' : 'Выключены';
+
   renderModHint();
+  renderAccounts(ch);
+  renderMods();
   renderCommands(ch);
   renderTimers(ch);
+  renderPreviews();
 }
 
 function renderCommands(ch) {
@@ -935,6 +1082,7 @@ function renderCommands(ch) {
         el('div', { class: 'item-text', text: text }),
       ]),
       el('div', { class: 'item-actions' }, [
+        testButton(text),
         el('button', { class: 'btn small', type: 'button', text: 'Изменить', onclick: () => editCommand(name, text) }),
         el('button', { class: 'btn small danger', type: 'button', text: 'Удалить', onclick: () => deleteCommand(name) }),
       ]),
@@ -952,7 +1100,7 @@ function renderTimers(ch) {
 
   if (!S.dirtyInterval) $('tInterval').value = ch.timerInterval == null ? '' : String(ch.timerInterval);
   $('intervalNote').textContent = ch.timerInterval == null
-    ? 'Сейчас используется интервал по умолчанию (30 мин.), заданный в боте. Чтобы задать свой, введите число минут от 1 до 1440.'
+    ? 'Сейчас используется интервал по умолчанию, заданный в боте. Чтобы задать свой, введите число минут от 1 до 1440.'
     : `Бот пишет одно сообщение раз в ${ch.timerInterval} мин. (если в чате есть активность). Пустое поле = интервал по умолчанию.`;
 
   const list = $('timerList');
@@ -961,6 +1109,7 @@ function renderTimers(ch) {
     list.append(el('li', { class: 'item' + (S.editingTimer?.index === index ? ' editing' : '') }, [
       el('div', { class: 'item-main' }, [el('div', { class: 'item-text', text })]),
       el('div', { class: 'item-actions' }, [
+        testButton(text),
         el('button', { class: 'btn small', type: 'button', text: 'Изменить', onclick: () => editTimer(index, text) }),
         el('button', { class: 'btn small danger', type: 'button', text: 'Удалить', onclick: () => deleteTimer(index, text) }),
       ]),
@@ -1007,6 +1156,224 @@ async function onValorantSubmit(ev) {
   }
 }
 
+// ---------- Аккаунты Valorant ----------
+
+function allAccounts(ch) { return [{ name: ch.name, tag: ch.tag, region: ch.region }, ...ch.accounts]; }
+function activeNumber(ch) { return ch.activeAccount <= allAccounts(ch).length ? ch.activeAccount : 1; }
+
+function renderAccounts(ch) {
+  const all = allAccounts(ch);
+  const act = activeNumber(ch);
+  const list = $('accList');
+  list.replaceChildren();
+  all.forEach((a, i) => {
+    const n = i + 1;
+    const actions = [];
+    if (act !== n) {
+      actions.push(el('button', { class: 'btn small', type: 'button', text: 'Сделать активным', onclick: () => setActiveAccount(n) }));
+    }
+    if (n > 1) actions.push(el('button', { class: 'btn small danger', type: 'button', text: 'Удалить', onclick: () => deleteAccount(n) }));
+    list.append(el('li', { class: 'item' }, [
+      el('div', { class: 'item-main' }, [
+        el('div', { class: 'item-name' }, [
+          document.createTextNode(`${n}) ${a.name}#${a.tag} (${a.region})`),
+          n === 1 ? el('span', { class: 'pill', text: 'основной' }) : null,
+          act === n ? el('span', { class: 'pill ok', text: 'активный' }) : null,
+        ]),
+      ]),
+      el('div', { class: 'item-actions' }, actions),
+    ]));
+  });
+  const full = all.length >= MAX_ACCOUNTS;
+  $('accFull').hidden = !full;
+  for (const id of ['aName', 'aTag', 'aRegion', 'accAdd']) $(id).disabled = full;
+}
+
+async function setActiveAccount(n) {
+  await save(() => update(channelRef(), { activeAccount: n === 1 ? null : n }), `Активный аккаунт: №${n}`);
+}
+
+async function onAccountAdd(ev) {
+  ev.preventDefault();
+  const ch = S.channel;
+  const n = validateValorantName($('aName').value);
+  const t = validateTag($('aTag').value);
+  const r = validateRegion($('aRegion').value);
+  const bad = [n, t, r].find((x) => !x.ok);
+  if (bad) { setError('accError', bad.error); return; }
+  const all = allAccounts(ch);
+  if (all.length >= MAX_ACCOUNTS) { setError('accError', `Максимум аккаунтов: ${MAX_ACCOUNTS}.`); return; }
+  if (all.some((a) => a.name.toLowerCase() === n.value.toLowerCase() && a.tag.toLowerCase() === t.value.toLowerCase())) {
+    setError('accError', 'Этот аккаунт уже добавлен.');
+    return;
+  }
+  setError('accError', '');
+  $('accAdd').disabled = true;
+  const ok = await save(() => update(channelRef(), {
+    accounts: listToAccounts([...ch.accounts, { name: n.value, tag: t.value, region: r.value }]),
+  }), `Аккаунт №${all.length + 1} добавлен`);
+  $('accAdd').disabled = false;
+  if (ok) { $('aName').value = ''; $('aTag').value = ''; }
+}
+
+async function deleteAccount(n) {
+  const ch = S.channel;
+  const all = allAccounts(ch);
+  const target = all[n - 1];
+  if (!target || !confirm(`Удалить аккаунт ${target.name}#${target.tag}?`)) return;
+  const extras = ch.accounts.filter((_, i) => i !== n - 2);
+  let act = activeNumber(ch);
+  if (act === n) act = 1; else if (act > n) act -= 1;
+  await save(() => update(channelRef(), {
+    accounts: listToAccounts(extras),
+    activeAccount: act === 1 ? null : act,
+  }), 'Аккаунт удалён');
+}
+
+async function onGamesChange() {
+  const box = $('gamesToggle');
+  box.disabled = true;
+  await save(() => update(channelRef(), { games: box.checked }), box.checked ? 'Мини-игры включены' : 'Мини-игры выключены');
+  box.disabled = false;
+}
+
+// ---------- Модераторы кабинета ----------
+
+function renderMods() {
+  const card = $('modsCard');
+  const own = isOwn();
+  card.hidden = !own || S?.mods === null;
+  if (card.hidden) return;
+  const list = $('modList');
+  list.replaceChildren();
+  for (const login of S.mods) {
+    list.append(el('li', { class: 'item' }, [
+      el('div', { class: 'item-main' }, [el('div', { class: 'item-name', text: login })]),
+      el('div', { class: 'item-actions' }, [
+        el('button', { class: 'btn small danger', type: 'button', text: 'Убрать', onclick: () => removeMod(login) }),
+      ]),
+    ]));
+  }
+  $('modEmpty').hidden = S.mods.length > 0;
+}
+
+const MODS_MAX = 20;
+
+async function onModAdd(ev) {
+  ev.preventDefault();
+  if (!isOwn()) return;
+  const r = validateModLogin($('modName').value);
+  if (!r.ok) { setError('modError', r.error); return; }
+  if (r.value === S.nick) { setError('modError', 'Это ваш собственный ник: вы и так владелец.'); return; }
+  if (S.mods.includes(r.value)) { setError('modError', 'Этот человек уже добавлен.'); return; }
+  if (S.mods.length >= MODS_MAX) { setError('modError', `Максимум модераторов: ${MODS_MAX}.`); return; }
+  setError('modError', '');
+  $('modAdd').disabled = true;
+  const ok = await save(() => update(ref(db), {
+    [`channelMods/${S.nick}/${r.value}`]: true,
+    [`modAccess/${r.value}/${S.nick}`]: true,
+  }), `${r.value} добавлен(а) как модератор кабинета`, PERM_HINT);
+  $('modAdd').disabled = false;
+  if (ok) $('modName').value = '';
+}
+
+async function removeMod(login) {
+  if (!isOwn() || !confirm(`Убрать ${login} из модераторов кабинета?`)) return;
+  await save(() => update(ref(db), {
+    [`channelMods/${S.nick}/${login}`]: null,
+    [`modAccess/${login}/${S.nick}`]: null,
+  }), `${login} больше не модератор кабинета`, PERM_HINT);
+}
+
+// ---------- Предпросмотр и тест ----------
+
+function renderChat(boxId, lines) {
+  const box = $(boxId);
+  box.replaceChildren();
+  box.hidden = lines.length === 0;
+  for (const [kind, who, text] of lines) {
+    box.append(el('div', { class: 'chat-line ' + kind }, [el('span', { class: 'who', text: who + ':' }), document.createTextNode(text)]));
+  }
+}
+
+function renderPreviews() {
+  const text = $('cmdText').value.trim();
+  const name = $('cmdName').value.trim().toLowerCase();
+  renderChat('cmdPreview', text
+    ? [['viewer', 'Зритель', name ? (name.startsWith('!') ? name : '!' + name) : '!команда'], ['bot', 'Бот', renderPreview(text)]]
+    : []);
+  const t = $('timerText').value.trim();
+  renderChat('timerPreview', t ? [['bot', 'Бот', renderPreview(t)]] : []);
+}
+
+const TEST_WAIT_MS = 12 * 1000;
+const TEST_MESSAGES = {
+  forbidden: 'Нет прав писать в чат этого канала.',
+  blocked: 'Бот недоступен для этого канала.',
+  nochannel: 'Бот сейчас не подключён к чату этого канала.',
+  badtext: 'Бот не принял текст: он пустой, слишком длинный или начинается с «/» или «.».',
+  cooldown: 'Слишком часто. Подождите несколько секунд.',
+  expired: 'Запрос устарел. Попробуйте ещё раз.',
+  notlinked: 'Twitch не привязан к этому входу. Выйдите и привяжите Twitch заново.',
+  error: 'Боту не удалось отправить сообщение. Попробуйте позже.',
+};
+
+function testButton(getText) {
+  const btn = el('button', { class: 'btn small test-btn', type: 'button', text: 'Тест' });
+  btn.disabled = !!S?.testing;
+  btn.addEventListener('click', () => sendTest(typeof getText === 'function' ? getText() : getText));
+  return btn;
+}
+
+function setTestBusy(busy) {
+  for (const b of document.querySelectorAll('.test-btn')) b.disabled = busy;
+}
+
+// Просит бота отправить текст в чат канала (testRequests -> testResults). Бот сам подставит {user} = ваш ник.
+async function sendTest(raw) {
+  if (!S || !S.channel || S.testing) return;
+  const t = validateMessageText(raw);
+  if (!t.ok) { toast(t.error, 'err'); return; }
+  const sid = S.id;
+  const uid = S.uid;
+  const chan = S.active;
+  const id = makeState(crypto.getRandomValues(new Uint8Array(12)));
+  S.testing = true;
+  setTestBusy(true);
+  let finished = false;
+  let unsub = null;
+  let timer = null;
+  const done = (msg, kind) => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    try { unsub?.(); } catch { /* */ }
+    if (S && S.id === sid) S.testing = false;
+    setTestBusy(false);
+    toast(msg, kind);
+  };
+  unsub = onValue(
+    ref(db, `testResults/${uid}`),
+    (snap) => {
+      const v = snap.val();
+      if (!v || v.id !== id) return;                // ответ на прошлый запрос
+      if (v.code === 'ok') done('Сообщение отправлено в чат', 'ok');
+      else done(TEST_MESSAGES[v.code] || TEST_MESSAGES.error, 'err');
+    },
+    (err) => {
+      console.error(err);
+      done(friendlyError(err, 'Нет доступа к ответу бота. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'), 'err');
+    },
+  );
+  timer = setTimeout(() => done('Бот не ответил. Возможно, он сейчас выключен.', 'err'), TEST_WAIT_MS);
+  try {
+    await set(ref(db, `testRequests/${uid}`), { id, text: t.value, channel: chan, createdAt: serverTimestamp() });
+  } catch (e) {
+    console.error(e);
+    done(friendlyError(e, 'Сервер отклонил запрос. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'), 'err');
+  }
+}
+
 // ---------- Действия: команды ----------
 
 function resetCommandForm() {
@@ -1018,6 +1385,7 @@ function resetCommandForm() {
   $('cmdCancel').hidden = true;
   setError('cmdError', '');
   updateCounter('cmdText', 'cmdCount');
+  renderPreviews();
 }
 
 function editCommand(name, text) {
@@ -1029,6 +1397,7 @@ function editCommand(name, text) {
   $('cmdCancel').hidden = false;
   setError('cmdError', '');
   updateCounter('cmdText', 'cmdCount');
+  renderPreviews();
   renderCommands(S.channel);
   $('cmdForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
   $('cmdText').focus();
@@ -1073,6 +1442,7 @@ function resetTimerForm() {
   $('timerCancel').hidden = true;
   setError('timerError', '');
   updateCounter('timerText', 'timerCount');
+  renderPreviews();
 }
 
 function editTimer(index, old) {
@@ -1083,13 +1453,14 @@ function editTimer(index, old) {
   $('timerCancel').hidden = false;
   setError('timerError', '');
   updateCounter('timerText', 'timerCount');
+  renderPreviews();
   renderTimers(S.channel);
   $('timerForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
   $('timerText').focus();
 }
 
 async function timersTransaction(mutator) {
-  const res = await runTransaction(ref(db, `channels/${S.nick}/timers`), mutator);
+  const res = await runTransaction(ref(db, `channels/${S.active}/timers`), mutator);
   return res.committed;
 }
 
@@ -1215,14 +1586,21 @@ function bindUi() {
 
   $('cmdForm').addEventListener('submit', onCommandSubmit);
   $('cmdCancel').addEventListener('click', resetCommandForm);
-  $('cmdText').addEventListener('input', () => updateCounter('cmdText', 'cmdCount'));
+  $('cmdText').addEventListener('input', () => { updateCounter('cmdText', 'cmdCount'); renderPreviews(); });
+  $('cmdName').addEventListener('input', renderPreviews);
+  $('cmdTest').addEventListener('click', () => sendTest($('cmdText').value));
+  $('timerTest').addEventListener('click', () => sendTest($('timerText').value));
+  $('accForm').addEventListener('submit', onAccountAdd);
+  $('gamesToggle').addEventListener('change', onGamesChange);
+  $('modForm').addEventListener('submit', onModAdd);
+  $('chanSelect').addEventListener('change', () => switchChannel($('chanSelect').value));
 
   $('timerToggle').addEventListener('change', onTimerToggle);
   $('intervalForm').addEventListener('submit', onIntervalSubmit);
   $('tInterval').addEventListener('input', () => { if (S) S.dirtyInterval = true; });
   $('timerForm').addEventListener('submit', onTimerSubmit);
   $('timerCancel').addEventListener('click', resetTimerForm);
-  $('timerText').addEventListener('input', () => updateCounter('timerText', 'timerCount'));
+  $('timerText').addEventListener('input', () => { updateCounter('timerText', 'timerCount'); renderPreviews(); });
 
   // админ-панель
   $('chanSearch').addEventListener('input', () => {
