@@ -151,26 +151,51 @@
 
     <!-- Кабинет -->
     <section id="view-dashboard" class="view" hidden>
-      <!-- Подсказка после подключения -->
-      <div id="modHint" class="card hint-card" hidden>
-        <h2>Последний шаг: выдайте боту модератора</h2>
-        <p>Бот подключён к вашему каналу. Чтобы он писал без ограничений Twitch, напишите в своём чате: <code id="modCmd">/mod бот</code></p>
-        <button id="modHintClose" class="btn small" type="button">Понятно</button>
-      </div>
+      <div class="cab">
+        <nav id="sideNav" class="side" aria-label="Разделы кабинета">
+          <button class="navbtn" type="button" data-nav="overview"><span class="ico" aria-hidden="true">🏠</span><span>Обзор</span></button>
+          <button class="navbtn" type="button" data-nav="valorant"><span class="ico" aria-hidden="true">🎯</span><span>Valorant</span></button>
+          <button class="navbtn" type="button" data-nav="commands"><span class="ico" aria-hidden="true">💬</span><span>Команды</span></button>
+          <button class="navbtn" type="button" data-nav="timers"><span class="ico" aria-hidden="true">⏱</span><span>Авто-сообщения</span></button>
+          <button class="navbtn" type="button" data-nav="games"><span class="ico" aria-hidden="true">🎲</span><span>Игры</span></button>
+          <button class="navbtn" type="button" data-nav="points"><span class="ico" aria-hidden="true">🪙</span><span>Очки</span></button>
+          <button class="navbtn" type="button" data-nav="shop"><span class="ico" aria-hidden="true">🛒</span><span>Магазин</span><span id="shopBadge" class="badge" hidden></span></button>
+          <button class="navbtn" type="button" data-nav="mods"><span class="ico" aria-hidden="true">👥</span><span>Модераторы</span></button>
+        </nav>
 
-      <!-- Бот включён -->
-      <div class="card row between">
-        <div>
-          <h2>Бот на канале</h2>
-          <p id="enabledNote" class="muted"></p>
-        </div>
-        <label class="switch">
-          <input id="enabledToggle" type="checkbox">
-          <span class="slider"></span>
-          <span id="enabledLabel" class="switch-label"></span>
-        </label>
-      </div>
+        <div class="content">
+          <!-- Обзор -->
+          <div id="panel-overview" class="panel" data-panel="overview" hidden>
+            <div id="modHint" class="card hint-card" hidden>
+              <h2>Последний шаг: выдайте боту модератора</h2>
+              <p>Бот подключён к вашему каналу. Чтобы он писал без ограничений Twitch, напишите в своём чате: <code id="modCmd">/mod бот</code></p>
+              <button id="modHintClose" class="btn small" type="button">Понятно</button>
+            </div>
 
+            <div class="card row between">
+              <div>
+                <h2>Бот на канале</h2>
+                <p id="enabledNote" class="muted"></p>
+              </div>
+              <label class="switch">
+                <input id="enabledToggle" type="checkbox">
+                <span class="slider"></span>
+                <span id="enabledLabel" class="switch-label"></span>
+              </label>
+            </div>
+
+            <div class="card">
+              <h2>Сводка</h2>
+              <dl id="summary" class="kv"></dl>
+            </div>
+
+            <div class="card muted small">
+              <p>«Выйти» закрывает кабинет только на этом устройстве. Бот и все настройки остаются как есть. Чтобы вернуться, войдите через Google снова. «Отвязать Twitch» разрывает связь кабинета с вашим Twitch-каналом (настройки бота остаются). Отключить бота от канала можно командой <code>!leave</code> в чате бота.</p>
+            </div>
+          </div>
+
+          <!-- Valorant -->
+          <div id="panel-valorant" class="panel" data-panel="valorant" hidden>
       <!-- Valorant -->
       <form id="valorantForm" class="card" novalidate>
         <h2>Аккаунт Valorant</h2>
@@ -231,19 +256,10 @@
         </form>
       </div>
 
-      <!-- Мини-игры -->
-      <div class="card row between">
-        <div>
-          <h2>Мини-игры в чате</h2>
-          <p class="muted"><code>!8ball вопрос</code>, <code>!dice</code> (или <code>!dice 20</code>), <code>!coin</code>, <code>!duel @ник</code>. У зрителей есть кулдаун, чтобы не засорять чат. По умолчанию выключены. Модератор может включать и выключать их в чате: <code>!games on</code> / <code>!games off</code>.</p>
-        </div>
-        <label class="switch">
-          <input id="gamesToggle" type="checkbox">
-          <span class="slider"></span>
-          <span id="gamesLabel" class="switch-label"></span>
-        </label>
-      </div>
+          </div>
 
+          <!-- Команды -->
+          <div id="panel-commands" class="panel" data-panel="commands" hidden>
       <!-- Команды -->
       <div class="card">
         <h2>Свои команды</h2>
@@ -270,6 +286,10 @@
         </form>
       </div>
 
+          </div>
+
+          <!-- Авто-сообщения -->
+          <div id="panel-timers" class="panel" data-panel="timers" hidden>
       <!-- Авто-сообщения -->
       <div class="card">
         <div class="row between">
@@ -314,8 +334,147 @@
         </form>
       </div>
 
+          </div>
+
+          <!-- Игры -->
+          <div id="panel-games" class="panel" data-panel="games" hidden>
+            <div class="card row between">
+              <div>
+                <h2>Мини-игры в чате</h2>
+                <p class="muted">Включают команды ниже для всех зрителей. У зрителей есть кулдаун, чтобы не засорять чат. В чате модератор может переключать: <code>!games on</code> / <code>!games off</code>.</p>
+              </div>
+              <label class="switch">
+                <input id="gamesToggle" type="checkbox">
+                <span class="slider"></span>
+                <span id="gamesLabel" class="switch-label"></span>
+              </label>
+            </div>
+            <div class="card row between">
+              <div>
+                <h2>Русская рулетка</h2>
+                <p class="muted"><code>!roulette</code>: с шансом 1 из 6 зритель получает таймаут на 30 секунд (модераторам ничего не будет). Нужно, чтобы бот был модератором канала. Выключено по умолчанию. В чате: <code>!games roulette on</code> / <code>off</code>.</p>
+              </div>
+              <label class="switch">
+                <input id="rouletteToggle" type="checkbox">
+                <span class="slider"></span>
+                <span id="rouletteLabel" class="switch-label"></span>
+              </label>
+            </div>
+            <div class="card">
+              <h2>Что умеют игры</h2>
+              <ul class="plain">
+                <li><code>!8ball вопрос</code>: «магический шар» отвечает случайной фразой.</li>
+                <li><code>!dice</code>, <code>!dice d20</code>: бросок кубика (по умолчанию d6, граней от 2 до 1000).</li>
+                <li><code>!coin</code>: орёл или решка.</li>
+                <li><code>!duel @ник</code>: шуточная дуэль, победитель случайный.</li>
+                <li><code>!rps камень|ножницы|бумага</code>: игра с ботом.</li>
+                <li><code>!love @ник</code>: «совместимость» двух зрителей в процентах (у пары всегда одинаковая).</li>
+                <li><code>!agent</code> и <code>!map</code>: случайный агент и карта Valorant (список зашит в бота и может отстать от актуального).</li>
+                <li>Если включены очки, <code>!coin 50</code>, <code>!dice 50</code> и <code>!duel @ник 50</code> становятся ставками (см. раздел «Очки»).</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Очки -->
+          <div id="panel-points" class="panel" data-panel="points" hidden>
+            <div class="card row between">
+              <div>
+                <h2>Очки зрителей</h2>
+                <p class="muted">Свои очки бота на этом канале (это не баллы канала Twitch). Зрители копят их за активность в чате и тратят на ставки и награды. В чате модератор может переключать: <code>!pts on</code> / <code>!pts off</code>. Выключение не стирает балансы.</p>
+              </div>
+              <label class="switch">
+                <input id="pointsToggle" type="checkbox">
+                <span class="slider"></span>
+                <span id="pointsLabel" class="switch-label"></span>
+              </label>
+            </div>
+
+            <form id="pointsForm" class="card" novalidate>
+              <h2>Настройки</h2>
+              <div class="grid4">
+                <label class="field tall">
+                  <span>Очков за активность</span>
+                  <input id="ptsPerChat" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+                <label class="field tall">
+                  <span>Как часто начислять, минут</span>
+                  <input id="ptsEveryMin" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+                <label class="field tall">
+                  <span>Ежедневный бонус (0: выключен)</span>
+                  <input id="ptsDaily" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+                <label class="field tall">
+                  <span>Максимальная ставка</span>
+                  <input id="ptsMaxBet" type="text" inputmode="numeric" autocomplete="off">
+                </label>
+              </div>
+              <p class="hint">Очки за активность зритель получает за сообщение в чате не чаще, чем раз в указанное число минут. Ежедневный бонус (<code>!daily</code>) растёт за серию дней подряд (до +70%).</p>
+              <p id="pointsError" class="error" hidden></p>
+              <button id="pointsSave" class="btn primary" type="submit">Сохранить настройки</button>
+            </form>
+
+            <div class="card">
+              <h2>Команды очков</h2>
+              <ul class="plain">
+                <li>Для всех: <code>!points</code> (или <code>!points @ник</code>), <code>!top</code>, <code>!daily</code>, <code>!gift @ник число</code>, <code>!shop</code>, <code>!buy номер</code>.</li>
+                <li>Ставки (нужны и очки, и игры): <code>!coin 50</code> (орёл: выигрыш ×2), <code>!dice 50</code> (бросок против бота, ничья возвращает ставку), <code>!duel @ник 50</code> (соперник отвечает <code>!accept</code> в течение минуты). <code>all</code> вместо числа ставит максимум.</li>
+                <li>Для модераторов: <code>!give @ник число</code> (отрицательное число забирает очки).</li>
+              </ul>
+            </div>
+
+            <div class="card">
+              <div class="row between">
+                <div>
+                  <h2>Таблица лидеров <span id="pointsTotal" class="muted small"></span></h2>
+                </div>
+                <button id="pointsReset" class="btn small danger" type="button">Обнулить очки</button>
+              </div>
+              <ol id="topList" class="list numbered"></ol>
+              <p id="topEmpty" class="empty" hidden>Пока ни у кого нет очков.</p>
+              <p class="hint">Обнуление выполняет бот: он должен быть включён и подключён к базе. Это действие нельзя отменить.</p>
+            </div>
+          </div>
+
+          <!-- Магазин -->
+          <div id="panel-shop" class="panel" data-panel="shop" hidden>
+            <div class="card">
+              <h2>Награды за очки</h2>
+              <p class="muted">Зритель пишет <code>!buy номер</code>, очки списываются, а заказ появляется ниже и в чате. Выдаёте награду вы сами, затем нажимаете «Выполнено». До 10 позиций.</p>
+              <ol id="shopList" class="list numbered"></ol>
+              <p id="shopEmpty" class="empty" hidden>Пока нет ни одной награды.</p>
+              <form id="shopForm" class="editor" novalidate>
+                <h3 id="shopFormTitle">Новая награда</h3>
+                <div class="row gap end">
+                  <label class="field grow">
+                    <span>Название</span>
+                    <input id="shopName" type="text" maxlength="30" autocomplete="off" placeholder="Выбрать песню">
+                  </label>
+                  <label class="field narrow">
+                    <span>Цена, очков</span>
+                    <input id="shopCost" type="text" inputmode="numeric" autocomplete="off" placeholder="500">
+                  </label>
+                </div>
+                <p id="shopError" class="error" hidden></p>
+                <div class="row gap">
+                  <button id="shopSave" class="btn primary" type="submit">Добавить награду</button>
+                  <button id="shopCancel" class="btn ghost" type="button" hidden>Отмена</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="card">
+              <h2>Заказы</h2>
+              <p class="muted">Зрители, которые уже заплатили очками. Когда выдали награду, нажмите «Выполнено»: заказ исчезнет. Если невыполненных заказов 50, покупки приостанавливаются.</p>
+              <ul id="orderList" class="list"></ul>
+              <p id="orderEmpty" class="empty" hidden>Невыполненных заказов нет.</p>
+            </div>
+          </div>
+
+          <!-- Модераторы -->
+          <div id="panel-mods" class="panel" data-panel="mods" hidden>
       <!-- Модераторы кабинета (только владелец канала) -->
-      <div id="modsCard" class="card" hidden>
+      <div id="modsCard" class="card">
         <h2>Модераторы кабинета</h2>
         <p class="muted">Добавьте человека по нику Twitch, и он сможет войти на этот сайт под своим аккаунтом (Google и привязка Twitch) и управлять вашим ботом: команды, авто-сообщения, аккаунты Valorant, игры, кнопка «Тест». Удалить канал и управлять списком модераторов может только владелец.</p>
         <ul id="modList" class="list"></ul>
@@ -330,8 +489,8 @@
         <p id="modError" class="error" hidden></p>
       </div>
 
-      <div class="card muted small">
-        <p>«Выйти» закрывает кабинет только на этом устройстве. Бот и все настройки остаются как есть. Чтобы вернуться, войдите через Google снова. «Отвязать Twitch» разрывает связь кабинета с вашим Twitch-каналом (настройки бота остаются). Отключить бота от канала можно командой <code>!leave</code> в чате бота.</p>
+          </div>
+        </div>
       </div>
     </section>
 

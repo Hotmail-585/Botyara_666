@@ -18,6 +18,8 @@ export const RESERVED_COMMANDS = [
   '!rank', '!setrank', '!join', '!leave',
   '!ранг', '!peak', '!lastgame', '!today', '!сегодня', '!acc', '!addacc', '!delacc',
   '!8ball', '!dice', '!coin', '!duel', '!games',
+  '!rps', '!love', '!agent', '!map', '!roulette',
+  '!points', '!очки', '!top', '!daily', '!give', '!gift', '!shop', '!buy', '!accept', '!принять', '!pts',
 ];
 export const MAX_ACCOUNTS = 5;   // основной + до 4 дополнительных
 
@@ -162,6 +164,9 @@ export function normalizeChannel(raw) {
       .sort(([a], [b]) => a.localeCompare(b, 'ru')),
     timers: timersToList(raw.timers),
     games: raw.games === true,
+    roulette: raw.roulette === true,
+    points: pointsSettings(raw.points),
+    shop: shopToList(raw.shop),
     accounts: accountsToList(raw.accounts),
     activeAccount: Number.isInteger(raw.activeAccount) && raw.activeAccount >= 1 && raw.activeAccount <= MAX_ACCOUNTS ? raw.activeAccount : 1,
   };
@@ -338,4 +343,111 @@ export function buildTwitchAuthUrl({ clientId, redirectUri, state }) {
 
 export function makeState(randomBytes) {
   return Array.from(randomBytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// ---------- Очки и магазин ----------
+
+export const PTS_LIMITS = {
+  perChat: { min: 1, max: 1000, def: 10, label: 'Очков за активность' },
+  everyMin: { min: 1, max: 120, def: 5, label: 'Как часто начислять, минут' },
+  daily: { min: 0, max: 100000, def: 100, label: 'Ежедневный бонус (0 = выключен)' },
+  maxBet: { min: 1, max: 100000, def: 500, label: 'Максимальная ставка' },
+};
+export const SHOP_MAX = 10;
+export const SHOP_NAME_MAX = 30;
+export const SHOP_COST_MAX = 1000000;
+
+// Настройки очков из узла channels/{ник}/points (нет поля = значение по умолчанию, как у бота).
+export function pointsSettings(raw) {
+  const p = raw && typeof raw === 'object' ? raw : {};
+  const out = { on: p.on === true };
+  for (const [k, spec] of Object.entries(PTS_LIMITS)) {
+    out[k] = Number.isInteger(p[k]) && p[k] >= spec.min && p[k] <= spec.max ? p[k] : spec.def;
+  }
+  return out;
+}
+
+// Поля формы настроек очков -> числа. inputs: { perChat, everyMin, daily, maxBet } (строки).
+export function validatePointsSettings(inputs) {
+  const out = {};
+  for (const [k, spec] of Object.entries(PTS_LIMITS)) {
+    const raw = String(inputs?.[k] ?? '').trim();
+    if (!/^\d+$/.test(raw)) return fail(`${spec.label}: целое число от ${spec.min} до ${spec.max}.`);
+    const n = Number(raw);
+    if (n < spec.min || n > spec.max) return fail(`${spec.label}: от ${spec.min} до ${spec.max}.`);
+    out[k] = n;
+  }
+  return ok(out);
+}
+
+// Магазин: массив или объект с ключами 0..9 -> плотный список {name, cost}.
+export function shopToList(raw) {
+  if (raw == null || typeof raw !== 'object') return [];
+  const entries = Array.isArray(raw) ? raw.map((v, i) => [i, v]) : Object.entries(raw).map(([k, v]) => [Number(k), v]);
+  return entries
+    .filter(([k, v]) => Number.isInteger(k) && v && typeof v.name === 'string' && v.name && Number.isInteger(v.cost) && v.cost >= 1)
+    .sort((a, b) => a[0] - b[0])
+    .map(([, v]) => ({ name: v.name, cost: v.cost }))
+    .slice(0, SHOP_MAX);
+}
+
+export function listToShop(list) {
+  if (!list.length) return null;
+  const obj = {};
+  list.forEach((it, i) => { obj[String(i)] = { name: it.name, cost: it.cost }; });
+  return obj;
+}
+
+export function validateShopItem(nameInput, costInput) {
+  const name = String(nameInput ?? '').replace(/\s+/g, ' ').trim();
+  if (name.length < 1 || name.length > SHOP_NAME_MAX) return fail(`Название награды: от 1 до ${SHOP_NAME_MAX} символов.`);
+  const raw = String(costInput ?? '').trim();
+  if (!/^\d+$/.test(raw)) return fail(`Цена: целое число от 1 до ${SHOP_COST_MAX}.`);
+  const cost = Number(raw);
+  if (cost < 1 || cost > SHOP_COST_MAX) return fail(`Цена: от 1 до ${SHOP_COST_MAX}.`);
+  return ok({ name, cost });
+}
+
+// Мутаторы для runTransaction (как у авто-сообщений): undefined = отменить.
+const sameItem = (a, b) => a && b && a.name === b.name && a.cost === b.cost;
+export function shopAdd(item) {
+  return (current) => {
+    const list = shopToList(current);
+    if (list.length >= SHOP_MAX) return undefined;
+    return listToShop([...list, item]);
+  };
+}
+export function shopEdit(index, old, item) {
+  return (current) => {
+    const list = shopToList(current);
+    if (!sameItem(list[index], old)) return undefined;
+    list[index] = item;
+    return listToShop(list);
+  };
+}
+export function shopRemove(index, old) {
+  return (current) => {
+    const list = shopToList(current);
+    if (!sameItem(list[index], old)) return undefined;
+    list.splice(index, 1);
+    return listToShop(list);
+  };
+}
+
+// Таблица лидеров из узла points/{ник}: { total: сколько зрителей с очками, top: [{ nick, b }] }.
+export function topOf(raw, n = 10) {
+  const rows = raw && typeof raw === 'object'
+    ? Object.entries(raw).filter(([, u]) => u && Number.isFinite(u.b) && u.b > 0).map(([nick, u]) => ({ nick, b: Math.floor(u.b) }))
+    : [];
+  rows.sort((a, b) => b.b - a.b || a.nick.localeCompare(b.nick));
+  return { total: rows.length, top: rows.slice(0, n) };
+}
+
+// Заказы из магазина: purchases/{ник} -> список, новые первыми.
+export function purchasesOf(raw) {
+  if (!raw || typeof raw !== 'object') return [];
+  return Object.entries(raw)
+    .filter(([, p]) => p && typeof p.user === 'string' && typeof p.item === 'string')
+    .map(([id, p]) => ({ id, user: p.user, item: p.item, cost: Number.isFinite(p.cost) ? p.cost : 0, at: Number.isFinite(p.at) ? p.at : 0 }))
+    .sort((a, b) => b.at - a.at);
 }

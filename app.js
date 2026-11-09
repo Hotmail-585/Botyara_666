@@ -15,6 +15,7 @@ import {
   validateMessageText, validateInterval,
   normalizeChannel, timersAdd, timersEdit, timersRemove,
   accountsToList, listToAccounts, validateModLogin, renderPreview, MAX_ACCOUNTS,
+  validatePointsSettings, validateShopItem, shopAdd, shopEdit, shopRemove, topOf, purchasesOf, PTS_LIMITS, SHOP_MAX,
   parseTwitchHash, buildTwitchAuthUrl, makeState,
   validateAdminLimit, formatAgo, formatDuration, alertsOf, botOnline, buildAdminRows,
 } from './validation.js';
@@ -24,6 +25,8 @@ const VIEWS = ['loading', 'error', 'login', 'connect', 'linking', 'linkfail', 'n
 const STATE_KEY = 'twitch_oauth_state';
 const TAB_KEY = 'bot_tab';
 const BASE_TITLE = document.title;
+const PANEL_KEY = 'bot_panel';
+const PANELS = ['overview', 'valorant', 'commands', 'timers', 'games', 'points', 'shop', 'mods'];
 const ADMIN_TICK_MS = 15 * 1000;
 const PERM_HINT = 'Сервер отклонил действие. Проверьте, что в Firebase опубликованы новые правила (database.rules.json) и что ваш ник есть в ADMINS бота.';
 const LIMIT_FIELDS = [
@@ -74,10 +77,24 @@ function freshState() {
     mods: null,                // наши модераторы (channelMods/{ник}), только для владельца
     unsubMods: null,
     testing: false,            // идёт тест: ждём ответ бота
+    // меню кабинета, очки и магазин
+    panel: loadPanel(),
+    editingShop: null,         // { index, old }
+    dirtyPoints: false,
+    pointsData: undefined,     // points/{канал}: undefined = ещё не загружено
+    pointsFor: null,           // для какого канала загружены очки
+    unsubPoints: null,
+    purchases: [],
+    unsubPurchases: null,
   };
 }
 
 // ---------- Вспомогательное ----------
+
+function loadPanel() {
+  try { const v = localStorage.getItem(PANEL_KEY); return PANELS.includes(v) ? v : 'overview'; } catch { return 'overview'; }
+}
+function savePanel(v) { try { localStorage.setItem(PANEL_KEY, v); } catch { /* не страшно */ } }
 
 let currentView = 'loading';
 function isOwn() { return !!S && S.active === S.nick; }
@@ -90,6 +107,8 @@ function showView(name) {
   $('unlinkBtn').hidden = !S?.nick;
   $('tabs').hidden = !(inCabinet && S?.isAdmin && S?.nick);
   $('main').classList.toggle('wide', name === 'admin');
+  $('main').classList.toggle('wide-cab', name === 'dashboard');
+  document.body.classList.toggle('cab-wide', name === 'dashboard');
   renderTabs();
   renderChanBar();
 }
@@ -311,6 +330,7 @@ function teardown() {
   try { S.unsubUser?.(); } catch { /* */ }
   try { S.unsubChannel?.(); } catch { /* */ }
   stopAccess();
+  stopExtras();
   S.unsubUser = S.unsubChannel = null;
   stopAdmin();
   S.id = null;
@@ -358,6 +378,7 @@ function onUnlinked() {
     try { S.unsubChannel?.(); } catch { /* */ }
     stopAdmin();
     stopAccess();
+    stopExtras();
     endJoin();
     S.nick = null;
     S.active = null;
@@ -399,6 +420,8 @@ function subscribeChannel() {
   const sid = S.id;
   const nick = S.active;
   try { S.unsubChannel?.(); } catch { /* */ }
+  stopExtras();
+  subscribeExtras();
   S.unsubChannel = onValue(
     ref(db, `channels/${nick}`),
     (snap) => {
@@ -436,9 +459,11 @@ function switchChannel(nick) {
   S.channel = undefined;
   S.editingCmd = null;
   S.editingTimer = null;
-  S.dirtyValorant = S.dirtyInterval = false;
+  S.dirtyValorant = S.dirtyInterval = S.dirtyPoints = false;
+  S.editingShop = null;
   resetCommandForm();
   resetTimerForm();
+  resetShopForm();
   setError('accError', '');
   setError('vError', '');
   subscribeChannel();
@@ -504,6 +529,50 @@ function subscribeMods() {
       renderMods();
     },
   );
+}
+
+// Заказы из магазина (всегда) и очки зрителей (когда открыт раздел «Очки») выбранного канала.
+function subscribeExtras() {
+  const sid = S.id;
+  const nick = S.active;
+  S.purchases = [];
+  S.unsubPurchases = onValue(
+    ref(db, `purchases/${nick}`),
+    (snap) => {
+      if (!S || S.id !== sid || S.active !== nick) return;
+      S.purchases = purchasesOf(snap.val());
+      renderOrders();
+    },
+    (err) => { console.error(err); if (S && S.id === sid && S.active === nick) { S.purchases = []; renderOrders(); } },
+  );
+}
+
+function ensurePointsSub() {
+  if (!S || !S.active || S.pointsFor === S.active) return;
+  try { S.unsubPoints?.(); } catch { /* */ }
+  const sid = S.id;
+  const nick = S.active;
+  S.pointsFor = nick;
+  S.pointsData = undefined;
+  S.unsubPoints = onValue(
+    ref(db, `points/${nick}`),
+    (snap) => {
+      if (!S || S.id !== sid || S.active !== nick) return;
+      S.pointsData = snap.val() || null;
+      renderLeaders();
+    },
+    (err) => { console.error(err); if (S && S.id === sid && S.active === nick) { S.pointsData = null; renderLeaders(); } },
+  );
+}
+
+function stopExtras() {
+  if (!S) return;
+  try { S.unsubPurchases?.(); } catch { /* */ }
+  try { S.unsubPoints?.(); } catch { /* */ }
+  S.unsubPurchases = S.unsubPoints = null;
+  S.purchases = [];
+  S.pointsFor = null;
+  S.pointsData = undefined;
 }
 
 function stopAccess() {
@@ -1063,6 +1132,8 @@ function renderDashboard() {
   // Игры
   $('gamesToggle').checked = ch.games;
   $('gamesLabel').textContent = ch.games ? 'Включены' : 'Выключены';
+  $('rouletteToggle').checked = ch.roulette;
+  $('rouletteLabel').textContent = ch.roulette ? 'Включена' : 'Выключена';
 
   renderModHint();
   renderAccounts(ch);
@@ -1070,6 +1141,220 @@ function renderDashboard() {
   renderCommands(ch);
   renderTimers(ch);
   renderPreviews();
+  renderPoints(ch);
+  renderShop(ch);
+  renderOrders();
+  renderSummary(ch);
+  showPanel(S.panel);
+}
+
+// ---------- Меню кабинета ----------
+
+function showPanel(name) {
+  if (!PANELS.includes(name) || (name === 'mods' && !isOwn())) name = 'overview';
+  S.panel = name;
+  for (const p of document.querySelectorAll('.panel')) p.hidden = p.dataset.panel !== name;
+  for (const b of document.querySelectorAll('.navbtn')) {
+    if (b.dataset.nav === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  }
+  $('sideNav').querySelector('[data-nav="mods"]').hidden = !isOwn();
+  if (name === 'points') { ensurePointsSub(); renderLeaders(); }
+}
+
+function onNavClick(name) {
+  if (!S) return;
+  savePanel(name);
+  showPanel(name);
+  window.scrollTo({ top: 0 });
+}
+
+function renderSummary(ch) {
+  const g = $('summary');
+  g.replaceChildren();
+  const link = (label, panel) => el('button', { class: 'btn small ghost', type: 'button', text: label, onclick: () => onNavClick(panel) });
+  const row = (label, value, panel) => g.append(el('dt', { text: label }), el('dd', {}, [document.createTextNode(value + ' '), panel ? link('Открыть', panel) : null]));
+  const act = activeNumber(ch);
+  const acc = allAccounts(ch)[act - 1];
+  row('Аккаунт Valorant', `${acc.name}#${acc.tag} (${acc.region})${allAccounts(ch).length > 1 ? `, активный №${act} из ${allAccounts(ch).length}` : ''}`, 'valorant');
+  row('Свои команды', String(ch.commands.length), 'commands');
+  row('Авто-сообщения', `${ch.timers.length}${ch.timers.length ? (ch.timerOff ? ', выключены' : ', включены') : ''}`, 'timers');
+  row('Мини-игры', ch.games ? `включены${ch.roulette ? ', рулетка включена' : ''}` : 'выключены', 'games');
+  row('Очки', ch.points.on ? 'включены' : 'выключены', 'points');
+  row('Магазин', `${ch.shop.length} наград, невыполненных заказов: ${S.purchases.length}`, 'shop');
+}
+
+// ---------- Очки ----------
+
+function renderPoints(ch) {
+  $('pointsToggle').checked = ch.points.on;
+  $('pointsLabel').textContent = ch.points.on ? 'Включены' : 'Выключены';
+  if (!S.dirtyPoints) {
+    $('ptsPerChat').value = String(ch.points.perChat);
+    $('ptsEveryMin').value = String(ch.points.everyMin);
+    $('ptsDaily').value = String(ch.points.daily);
+    $('ptsMaxBet').value = String(ch.points.maxBet);
+  }
+}
+
+function renderLeaders() {
+  if (!S) return;
+  const list = $('topList');
+  list.replaceChildren();
+  if (S.pointsData === undefined) { $('topEmpty').textContent = 'Загрузка…'; $('topEmpty').hidden = false; $('pointsTotal').textContent = ''; return; }
+  const { total, top } = topOf(S.pointsData, 10);
+  for (const r of top) {
+    list.append(el('li', { class: 'item' }, [
+      el('div', { class: 'item-main' }, [el('div', { class: 'item-name', text: r.nick })]),
+      el('div', { class: 'item-actions' }, [el('span', { class: 'pill ok', text: '🪙 ' + r.b })]),
+    ]));
+  }
+  $('pointsTotal').textContent = total ? `(зрителей с очками: ${total})` : '';
+  $('topEmpty').textContent = 'Пока ни у кого нет очков.';
+  $('topEmpty').hidden = total > 0;
+}
+
+async function onPointsToggle() {
+  const box = $('pointsToggle');
+  box.disabled = true;
+  await save(() => update(channelRef(), { 'points/on': box.checked }), box.checked ? 'Очки включены' : 'Очки выключены');
+  box.disabled = false;
+}
+
+async function onPointsSubmit(ev) {
+  ev.preventDefault();
+  const r = validatePointsSettings({
+    perChat: $('ptsPerChat').value, everyMin: $('ptsEveryMin').value,
+    daily: $('ptsDaily').value, maxBet: $('ptsMaxBet').value,
+  });
+  if (!r.ok) { setError('pointsError', r.error); return; }
+  setError('pointsError', '');
+  $('pointsSave').disabled = true;
+  const changes = {};
+  for (const [k, v] of Object.entries(r.value)) changes[`points/${k}`] = v;
+  const ok = await save(() => update(channelRef(), changes), 'Настройки очков сохранены');
+  $('pointsSave').disabled = false;
+  if (ok) S.dirtyPoints = false;
+}
+
+async function onPointsReset() {
+  if (!confirm('Обнулить очки всех зрителей этого канала?\n\nЭто нельзя отменить. Обнуление выполнит бот, он должен быть включён.')) return;
+  await save(() => update(channelRef(), { pointsReset: serverTimestamp() }), 'Запрос на обнуление отправлен боту', PERM_HINT);
+}
+
+async function onRouletteChange() {
+  const box = $('rouletteToggle');
+  box.disabled = true;
+  await save(() => update(channelRef(), { roulette: box.checked }), box.checked ? 'Рулетка включена' : 'Рулетка выключена');
+  box.disabled = false;
+}
+
+// ---------- Магазин ----------
+
+function renderShop(ch) {
+  const list = $('shopList');
+  list.replaceChildren();
+  ch.shop.forEach((it, index) => {
+    list.append(el('li', { class: 'item' + (S.editingShop?.index === index ? ' editing' : '') }, [
+      el('div', { class: 'item-main' }, [
+        el('div', { class: 'item-name', text: it.name }),
+        el('div', { class: 'item-text', text: `🪙 ${it.cost}` }),
+      ]),
+      el('div', { class: 'item-actions' }, [
+        el('button', { class: 'btn small', type: 'button', text: 'Изменить', onclick: () => editShopItem(index, it) }),
+        el('button', { class: 'btn small danger', type: 'button', text: 'Удалить', onclick: () => deleteShopItem(index, it) }),
+      ]),
+    ]));
+  });
+  $('shopEmpty').hidden = ch.shop.length > 0;
+  if (S.editingShop) {
+    const cur = ch.shop[S.editingShop.index];
+    if (!cur || cur.name !== S.editingShop.old.name || cur.cost !== S.editingShop.old.cost) resetShopForm();
+  }
+}
+
+function resetShopForm() {
+  if (!S) return;
+  S.editingShop = null;
+  $('shopName').value = '';
+  $('shopCost').value = '';
+  $('shopFormTitle').textContent = 'Новая награда';
+  $('shopSave').textContent = 'Добавить награду';
+  $('shopCancel').hidden = true;
+  setError('shopError', '');
+}
+
+function editShopItem(index, old) {
+  S.editingShop = { index, old };
+  $('shopName').value = old.name;
+  $('shopCost').value = String(old.cost);
+  $('shopFormTitle').textContent = 'Изменить награду';
+  $('shopSave').textContent = 'Сохранить изменения';
+  $('shopCancel').hidden = false;
+  setError('shopError', '');
+  renderShop(S.channel);
+  $('shopForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  $('shopName').focus();
+}
+
+async function shopTransaction(mutator) {
+  const res = await runTransaction(ref(db, `channels/${S.active}/shop`), mutator);
+  return res.committed;
+}
+
+async function onShopSubmit(ev) {
+  ev.preventDefault();
+  const r = validateShopItem($('shopName').value, $('shopCost').value);
+  if (!r.ok) { setError('shopError', r.error); return; }
+  const editing = S.editingShop;
+  if (!editing && S.channel.shop.length >= SHOP_MAX) { setError('shopError', `Достигнут максимум: ${SHOP_MAX} наград. Удалите ненужную.`); return; }
+  setError('shopError', '');
+  $('shopSave').disabled = true;
+  let committed = false;
+  const ok = await save(async () => {
+    committed = await shopTransaction(editing ? shopEdit(editing.index, editing.old, r.value) : shopAdd(r.value));
+  });
+  $('shopSave').disabled = false;
+  if (!ok) return;
+  if (committed) { toast(editing ? 'Награда изменена' : 'Награда добавлена', 'ok'); resetShopForm(); }
+  else toast('Список изменился или достигнут лимит. Проверьте список и повторите.', 'err');
+}
+
+async function deleteShopItem(index, old) {
+  if (!confirm(`Удалить награду «${old.name}»?`)) return;
+  let committed = false;
+  const ok = await save(async () => { committed = await shopTransaction(shopRemove(index, old)); });
+  if (!ok) return;
+  if (committed) { toast('Награда удалена', 'ok'); if (S.editingShop) resetShopForm(); }
+  else toast('Список изменился. Проверьте его и повторите.', 'err');
+}
+
+// ---------- Заказы ----------
+
+function renderOrders() {
+  if (!S) return;
+  const list = $('orderList');
+  list.replaceChildren();
+  const now = Date.now();
+  for (const o of S.purchases) {
+    list.append(el('li', { class: 'item' }, [
+      el('div', { class: 'item-main' }, [
+        el('div', { class: 'item-name', text: `${o.user}: ${o.item}` }),
+        el('div', { class: 'item-text', text: `🪙 ${o.cost}${o.at ? ', ' + formatAgo(now - o.at) : ''}` }),
+      ]),
+      el('div', { class: 'item-actions' }, [
+        el('button', { class: 'btn small', type: 'button', text: 'Выполнено', onclick: () => completeOrder(o.id) }),
+      ]),
+    ]));
+  }
+  $('orderEmpty').hidden = S.purchases.length > 0;
+  const badge = $('shopBadge');
+  badge.hidden = S.purchases.length === 0;
+  badge.textContent = String(S.purchases.length);
+  if (S.channel) renderSummary(S.channel);
+}
+
+async function completeOrder(id) {
+  await save(() => set(ref(db, `purchases/${S.active}/${id}`), null), 'Заказ выполнен');
 }
 
 function renderCommands(ch) {
@@ -1594,6 +1879,14 @@ function bindUi() {
   $('gamesToggle').addEventListener('change', onGamesChange);
   $('modForm').addEventListener('submit', onModAdd);
   $('chanSelect').addEventListener('change', () => switchChannel($('chanSelect').value));
+  for (const b of document.querySelectorAll('.navbtn')) b.addEventListener('click', () => onNavClick(b.dataset.nav));
+  $('pointsToggle').addEventListener('change', onPointsToggle);
+  $('pointsForm').addEventListener('submit', onPointsSubmit);
+  for (const id of ['ptsPerChat', 'ptsEveryMin', 'ptsDaily', 'ptsMaxBet']) $(id).addEventListener('input', () => { if (S) S.dirtyPoints = true; });
+  $('pointsReset').addEventListener('click', onPointsReset);
+  $('rouletteToggle').addEventListener('change', onRouletteChange);
+  $('shopForm').addEventListener('submit', onShopSubmit);
+  $('shopCancel').addEventListener('click', resetShopForm);
 
   $('timerToggle').addEventListener('change', onTimerToggle);
   $('intervalForm').addEventListener('submit', onIntervalSubmit);
