@@ -16,6 +16,8 @@ import {
   normalizeChannel, timersAdd, timersEdit, timersRemove,
   accountsToList, listToAccounts, validateModLogin, renderPreview, MAX_ACCOUNTS,
   validatePointsSettings, validateShopItem, shopAdd, shopEdit, shopRemove, topOf, purchasesOf, PTS_LIMITS, SHOP_MAX,
+  PERM_SHORT, CMD_CD, ALIASES_MAX, validateCmdOptions, parseAliasList,
+  FILTER_KINDS, FILTER_NAMES, FILTER_PARAMS, validateFilterSettings,
   parseTwitchHash, buildTwitchAuthUrl, makeState,
   validateAdminLimit, formatAgo, formatDuration, alertsOf, botOnline, buildAdminRows,
 } from './validation.js';
@@ -26,7 +28,7 @@ const STATE_KEY = 'twitch_oauth_state';
 const TAB_KEY = 'bot_tab';
 const BASE_TITLE = document.title;
 const PANEL_KEY = 'bot_panel';
-const PANELS = ['overview', 'valorant', 'commands', 'timers', 'games', 'points', 'shop', 'mods'];
+const PANELS = ['overview', 'valorant', 'commands', 'timers', 'filters', 'games', 'points', 'shop', 'mods'];
 const ADMIN_TICK_MS = 15 * 1000;
 const PERM_HINT = 'Сервер отклонил действие. Проверьте, что в Firebase опубликованы новые правила (database.rules.json) и что ваш ник есть в ADMINS бота.';
 const LIMIT_FIELDS = [
@@ -57,6 +59,7 @@ function freshState() {
     editingTimer: null,        // { index, old }
     dirtyValorant: false,
     dirtyInterval: false,
+    dirtyFilters: false,
     // админ-панель
     isAdmin: false,
     tab: null,                 // 'cabinet' | 'admin' | null (= выбрать автоматически)
@@ -129,7 +132,7 @@ function renderChanBar() {
   sel.value = S.active;
   $('chanBarNote').textContent = isOwn()
     ? 'Вас добавили модератором на других каналах: выберите канал, чтобы управлять ботом там.'
-    : `Вы управляете каналом ${S.active} как модератор: можно править команды, авто-сообщения, аккаунты Valorant и игры.`;
+    : `Вы управляете каналом ${S.active} как модератор: можно править команды, авто-сообщения, фильтры, аккаунты Valorant и игры.`;
 }
 
 let toastTimer = null;
@@ -169,7 +172,7 @@ function friendlyError(e, permHint) {
   const code = String(e?.code || '');
   const msg = String(e?.message || '');
   if (/permission_denied/i.test(code + msg)) {
-    return permHint || 'Сервер не принял изменение. Возможно, бот отключён от канала (!leave) или данные не прошли проверку.';
+    return permHint || 'Сервер не принял изменение. Возможно, бот отключён от канала (!leave) или данные не прошли проверку. Если вы только что обновляли сайт, проверьте, что в Firebase опубликованы новые правила (database.rules.json).';
   }
   if (/network|unavailable|offline|disconnected/i.test(code + msg)) {
     return 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.';
@@ -386,7 +389,7 @@ function onUnlinked() {
     S.channel = undefined;
     S.editingCmd = null;
     S.editingTimer = null;
-    S.dirtyValorant = S.dirtyInterval = false;
+    S.dirtyValorant = S.dirtyInterval = S.dirtyFilters = false;
     $('userNick').textContent = S.email;
   }
   if (S.pendingToken) { sendLink(); return; }
@@ -459,13 +462,14 @@ function switchChannel(nick) {
   S.channel = undefined;
   S.editingCmd = null;
   S.editingTimer = null;
-  S.dirtyValorant = S.dirtyInterval = S.dirtyPoints = false;
+  S.dirtyValorant = S.dirtyInterval = S.dirtyPoints = S.dirtyFilters = false;
   S.editingShop = null;
   resetCommandForm();
   resetTimerForm();
   resetShopForm();
   setError('accError', '');
   setError('vError', '');
+  setError('filtersError', '');
   subscribeChannel();
   route();
 }
@@ -883,6 +887,20 @@ function renderBotState() {
   }
   kvRow(grid, 'Twitch', twText);
 
+  // Модерация через Twitch API: нужна фильтрам чата и таймауту рулетки
+  const mod = st.moderation;
+  if (mod && typeof mod === 'object') {
+    const missing = mod.missing ? Object.values(mod.missing) : [];
+    let modText;
+    if (mod.ready) modText = `работает (токен аккаунта ${mod.login || 'бота'})`;
+    else if (mod.error) modText = `недоступна: ${mod.error}`;
+    else if (missing.length) modText = `недоступна: у токена бота нет прав ${missing.join(', ')}`;
+    else modText = 'недоступна: токен ещё не проверен';
+    kvRow(grid, 'Модерация чата (фильтры)', modText);
+  } else {
+    kvRow(grid, 'Модерация чата (фильтры)', 'нет данных (обновите bot.js и перезапустите бота)');
+  }
+
   const c = st.channels || {};
   const lim = st.limits || {};
   kvRow(grid, 'Каналы', `${c.total ?? 0} из ${lim.maxChannels ?? '?'} · включено ${c.enabled ?? 0} · заблокировано ${c.blocked ?? 0}`);
@@ -1081,7 +1099,7 @@ function checkAdminEvents() {
   } else if (newest > A.seenAlertAt) {
     const fresh = alerts.filter((a) => a.at > A.seenAlertAt && a.level !== 'info');
     A.seenAlertAt = newest;
-    for (const a of fresh.slice(0, 3)) notify('Бот: ' + a.text, a.level === 'error' ? 'err' : 'err');
+    for (const a of fresh.slice(0, 3)) notify('Бот: ' + a.text, 'err');
   }
 
   const online = botOnline(A.status, now);
@@ -1140,6 +1158,7 @@ function renderDashboard() {
   renderMods();
   renderCommands(ch);
   renderTimers(ch);
+  renderFilters(ch);
   renderPreviews();
   renderPoints(ch);
   renderShop(ch);
@@ -1178,9 +1197,121 @@ function renderSummary(ch) {
   row('Аккаунт Valorant', `${acc.name}#${acc.tag} (${acc.region})${allAccounts(ch).length > 1 ? `, активный №${act} из ${allAccounts(ch).length}` : ''}`, 'valorant');
   row('Свои команды', String(ch.commands.length), 'commands');
   row('Авто-сообщения', `${ch.timers.length}${ch.timers.length ? (ch.timerOff ? ', выключены' : ', включены') : ''}`, 'timers');
+  const activeFilters = FILTER_KINDS.filter((k) => ch.filters[k].on).length;
+  row('Фильтры чата', ch.filters.on ? `включены, действующих фильтров: ${activeFilters} из ${FILTER_KINDS.length}` : 'выключены', 'filters');
   row('Мини-игры', ch.games ? `включены${ch.roulette ? ', рулетка включена' : ''}` : 'выключены', 'games');
   row('Очки', ch.points.on ? 'включены' : 'выключены', 'points');
   row('Магазин', `${ch.shop.length} наград, невыполненных заказов: ${S.purchases.length}`, 'shop');
+}
+
+// ---------- Фильтры чата ----------
+
+const FILTER_HELP = {
+  links: 'Сообщения со ссылками. Сайты из списка разрешены. Одну ссылку конкретному зрителю можно разрешить в чате командой !permit @ник.',
+  caps: 'Сообщения, где слишком много заглавных букв. Короткие сообщения (меньше указанного числа букв) не проверяются.',
+  repeat: 'Одно и то же сообщение от одного зрителя несколько раз подряд (в течение минуты).',
+  emotes: 'Сообщения, где эмоутов больше допустимого.',
+  words: 'Сообщения, где встречается слово или фраза из списка (регистр и «ё» не важны, ищется внутри слова).',
+};
+const FILTER_TEXT_FIELDS = {
+  links: ['allow', 'Разрешённые сайты (через запятую)', 'twitch.tv, youtube.com', 'input'],
+  words: ['list', 'Запрещённые слова и фразы (через запятую)', 'слово1, слово2', 'textarea'],
+};
+
+function fid(kind, key) { return `flt-${kind}-${key}`; }
+
+// Форма фильтров строится один раз: пять одинаковых блоков.
+function buildFilterForm() {
+  const box = $('filterBlocks');
+  box.replaceChildren();
+  for (const kind of FILTER_KINDS) {
+    const rows = [];
+    const toggleLabel = el('span', { class: 'switch-label', id: fid(kind, 'label') });
+    const toggle = el('input', { type: 'checkbox', id: fid(kind, 'on') });
+    toggle.addEventListener('change', () => { toggleLabel.textContent = toggle.checked ? 'Включён' : 'Выключен'; });
+    rows.push(el('div', { class: 'row between' }, [
+      el('h3', { text: FILTER_NAMES[kind] }),
+      el('label', { class: 'switch' }, [toggle, el('span', { class: 'slider' }), toggleLabel]),
+    ]));
+    rows.push(el('p', { class: 'hint', text: FILTER_HELP[kind] }));
+
+    const fields = [];
+    const action = el('select', { id: fid(kind, 'action') }, [
+      el('option', { value: 'delete', text: 'Удалить сообщение' }),
+      el('option', { value: 'timeout', text: 'Удалить и дать таймаут' }),
+    ]);
+    fields.push(el('label', { class: 'field' }, [el('span', { text: 'Действие' }), action]));
+    fields.push(el('label', { class: 'field' }, [
+      el('span', { text: 'Таймаут, секунд' }),
+      el('input', { id: fid(kind, 'sec'), type: 'text', inputmode: 'numeric', autocomplete: 'off' }),
+    ]));
+    for (const [k, spec] of Object.entries(FILTER_PARAMS[kind] || {})) {
+      fields.push(el('label', { class: 'field' }, [
+        el('span', { text: spec.label }),
+        el('input', { id: fid(kind, k), type: 'text', inputmode: 'numeric', autocomplete: 'off', placeholder: String(spec.def) }),
+      ]));
+    }
+    rows.push(el('div', { class: 'grid3' }, fields));
+
+    const tf = FILTER_TEXT_FIELDS[kind];
+    if (tf) {
+      const [key, label, placeholder, tag] = tf;
+      const input = tag === 'textarea'
+        ? el('textarea', { id: fid(kind, key), rows: '3', maxlength: '1500', spellcheck: 'false', placeholder })
+        : el('input', { id: fid(kind, key), type: 'text', autocomplete: 'off', spellcheck: 'false', placeholder });
+      rows.push(el('label', { class: 'field' }, [el('span', { text: label }), input]));
+    }
+    box.append(el('div', { class: 'editor' }, rows));
+  }
+}
+
+function renderFilters(ch) {
+  const f = ch.filters;
+  $('filtersToggle').checked = f.on;
+  $('filtersLabel').textContent = f.on ? 'Включены' : 'Выключены';
+  if (S.dirtyFilters) return;
+  for (const kind of FILTER_KINDS) {
+    const x = f[kind];
+    $(fid(kind, 'on')).checked = x.on;
+    $(fid(kind, 'label')).textContent = x.on ? 'Включён' : 'Выключен';
+    $(fid(kind, 'action')).value = x.action;
+    $(fid(kind, 'sec')).value = String(x.sec);
+    for (const k of Object.keys(FILTER_PARAMS[kind] || {})) $(fid(kind, k)).value = String(x[k]);
+    if (kind === 'links') $(fid(kind, 'allow')).value = x.allow.split(',').filter(Boolean).join(', ');
+    if (kind === 'words') $(fid(kind, 'list')).value = x.list.split(',').filter(Boolean).join(', ');
+  }
+}
+
+function collectFilterForm() {
+  const form = {};
+  for (const kind of FILTER_KINDS) {
+    form[kind] = { action: $(fid(kind, 'action')).value, sec: $(fid(kind, 'sec')).value };
+    for (const k of Object.keys(FILTER_PARAMS[kind] || {})) form[kind][k] = $(fid(kind, k)).value;
+    if (kind === 'links') form[kind].allow = $(fid(kind, 'allow')).value;
+    if (kind === 'words') form[kind].list = $(fid(kind, 'list')).value;
+  }
+  return form;
+}
+
+async function onFiltersToggle() {
+  const box = $('filtersToggle');
+  box.disabled = true;
+  await save(() => update(channelRef(), { 'filters/on': box.checked }), box.checked ? 'Фильтры включены' : 'Фильтры выключены');
+  box.disabled = false;
+}
+
+async function onFiltersSubmit(ev) {
+  ev.preventDefault();
+  const r = validateFilterSettings(collectFilterForm());
+  if (!r.ok) { setError('filtersError', r.error); return; }
+  setError('filtersError', '');
+  const changes = {};
+  for (const [k, v] of Object.entries(r.value)) changes[`filters/${k}`] = v;
+  for (const kind of FILTER_KINDS) changes[`filters/${kind}/on`] = $(fid(kind, 'on')).checked;
+  $('filtersSave').disabled = true;
+  const ok = await save(() => update(channelRef(), changes), 'Фильтры сохранены');
+  $('filtersSave').disabled = false;
+  if (ok) S.dirtyFilters = false;
 }
 
 // ---------- Очки ----------
@@ -1357,14 +1488,28 @@ async function completeOrder(id) {
   await save(() => set(ref(db, `purchases/${S.active}/${id}`), null), 'Заказ выполнен');
 }
 
+// ---------- Свои команды: права, кулдаун, алиасы ----------
+
+function aliasesOfCommand(ch, name) {
+  return Object.keys(ch.aliases).filter((a) => ch.aliases[a] === name).sort();
+}
+
+function cmdOptionsOf(ch, name) {
+  return ch.cmdOpts[name] || { perm: 'all', cd: CMD_CD.def };
+}
+
 function renderCommands(ch) {
   const list = $('cmdList');
   list.replaceChildren();
   for (const [name, text] of ch.commands) {
+    const o = cmdOptionsOf(ch, name);
+    const aliases = aliasesOfCommand(ch, name);
+    const meta = `Кто может: ${PERM_SHORT[o.perm]} · кулдаун ${o.cd} с${aliases.length ? ` · алиасы: ${aliases.join(', ')}` : ''}`;
     const li = el('li', { class: 'item' + (S.editingCmd === name ? ' editing' : '') }, [
       el('div', { class: 'item-main' }, [
         el('div', { class: 'item-name', text: name }),
         el('div', { class: 'item-text', text: text }),
+        el('div', { class: 'chan-meta', text: meta }),
       ]),
       el('div', { class: 'item-actions' }, [
         testButton(text),
@@ -1588,7 +1733,7 @@ function renderPreviews() {
     ? [['viewer', 'Зритель', name ? (name.startsWith('!') ? name : '!' + name) : '!команда'], ['bot', 'Бот', renderPreview(text)]]
     : []);
   const t = $('timerText').value.trim();
-  renderChat('timerPreview', t ? [['bot', 'Бот', renderPreview(t)]] : []);
+  renderChat('timerPreview', t ? [['bot', 'Бот', renderPreview(t, 'Зритель', false)]] : []);
 }
 
 const TEST_WAIT_MS = 12 * 1000;
@@ -1665,6 +1810,9 @@ function resetCommandForm() {
   S.editingCmd = null;
   $('cmdName').value = '';
   $('cmdText').value = '';
+  $('cmdPerm').value = 'all';
+  $('cmdCd').value = '';
+  $('cmdAliases').value = '';
   $('cmdFormTitle').textContent = 'Новая команда';
   $('cmdSave').textContent = 'Добавить команду';
   $('cmdCancel').hidden = true;
@@ -1674,37 +1822,72 @@ function resetCommandForm() {
 }
 
 function editCommand(name, text) {
+  const ch = S.channel;
+  const o = cmdOptionsOf(ch, name);
   S.editingCmd = name;
   $('cmdName').value = name;
   $('cmdText').value = text;
+  $('cmdPerm').value = o.perm;
+  $('cmdCd').value = o.cd === CMD_CD.def ? '' : String(o.cd);
+  $('cmdAliases').value = aliasesOfCommand(ch, name).join(', ');
   $('cmdFormTitle').textContent = 'Изменить команду';
   $('cmdSave').textContent = 'Сохранить изменения';
   $('cmdCancel').hidden = false;
   setError('cmdError', '');
   updateCounter('cmdText', 'cmdCount');
   renderPreviews();
-  renderCommands(S.channel);
+  renderCommands(ch);
   $('cmdForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
   $('cmdText').focus();
 }
 
 async function onCommandSubmit(ev) {
   ev.preventDefault();
+  const ch = S.channel;
   const n = validateCommandName($('cmdName').value);
   if (!n.ok) { setError('cmdError', n.error); return; }
   const t = validateMessageText($('cmdText').value);
   if (!t.ok) { setError('cmdError', t.error); return; }
+  const o = validateCmdOptions($('cmdPerm').value, $('cmdCd').value);
+  if (!o.ok) { setError('cmdError', o.error); return; }
+  const a = parseAliasList($('cmdAliases').value, n.value);
+  if (!a.ok) { setError('cmdError', a.error); return; }
 
   const old = S.editingCmd;
-  const exists = S.channel.commands.some(([name]) => name === n.value);
+  const exists = ch.commands.some(([name]) => name === n.value);
   if (exists && n.value !== old) {
     setError('cmdError', `Команда ${n.value} уже есть. Нажмите «Изменить» рядом с ней.`);
     return;
   }
+  if (Object.prototype.hasOwnProperty.call(ch.aliases, n.value)) {
+    setError('cmdError', `${n.value} уже используется как алиас другой команды. Уберите алиас там или выберите другое название.`);
+    return;
+  }
+
+  // алиасы: не должны совпадать с командами и с чужими алиасами
+  const owner = old || n.value;
+  const owned = aliasesOfCommand(ch, owner);
+  for (const al of a.value) {
+    if (ch.commands.some(([name]) => name === al)) { setError('cmdError', `Алиас ${al} совпадает с названием существующей команды.`); return; }
+    if (Object.prototype.hasOwnProperty.call(ch.aliases, al) && ch.aliases[al] !== owner) {
+      setError('cmdError', `Алиас ${al} уже принадлежит команде ${ch.aliases[al]}.`);
+      return;
+    }
+  }
+  const total = Object.keys(ch.aliases).length - owned.length + a.value.length;
+  if (total > ALIASES_MAX) { setError('cmdError', `Достигнут максимум алиасов на канале: ${ALIASES_MAX}.`); return; }
   setError('cmdError', '');
 
   const changes = { [`commands/${n.value}`]: t.value };
-  if (old && old !== n.value) changes[`commands/${old}`] = null; // переименование
+  if (old && old !== n.value) {                      // переименование: убираем старое название и его настройки
+    changes[`commands/${old}`] = null;
+    changes[`cmdOpts/${old}`] = null;
+  }
+  const isDefault = o.value.perm === 'all' && o.value.cd === CMD_CD.def;
+  changes[`cmdOpts/${n.value}`] = isDefault ? null : { perm: o.value.perm, cd: o.value.cd };
+  for (const x of owned) if (!a.value.includes(x)) changes[`aliases/${x}`] = null;
+  for (const x of a.value) changes[`aliases/${x}`] = n.value;
+
   $('cmdSave').disabled = true;
   const ok = await save(() => update(channelRef(), changes), old ? 'Команда изменена' : 'Команда добавлена');
   $('cmdSave').disabled = false;
@@ -1713,7 +1896,9 @@ async function onCommandSubmit(ev) {
 
 async function deleteCommand(name) {
   if (!confirm(`Удалить команду ${name}?`)) return;
-  const ok = await save(() => update(channelRef(), { [`commands/${name}`]: null }), 'Команда удалена');
+  const changes = { [`commands/${name}`]: null, [`cmdOpts/${name}`]: null };
+  for (const x of aliasesOfCommand(S.channel, name)) changes[`aliases/${x}`] = null;
+  const ok = await save(() => update(channelRef(), changes), 'Команда удалена');
   if (ok && S.editingCmd === name) resetCommandForm();
 }
 
@@ -1849,6 +2034,8 @@ function fillBotName() {
 // ---------- Запуск ----------
 
 function bindUi() {
+  buildFilterForm();
+
   $('googleBtn').addEventListener('click', startGoogleLogin);
   $('connectBtn').addEventListener('click', startLogin);
   $('unlinkBtn').addEventListener('click', unlinkTwitch);
@@ -1887,6 +2074,11 @@ function bindUi() {
   $('rouletteToggle').addEventListener('change', onRouletteChange);
   $('shopForm').addEventListener('submit', onShopSubmit);
   $('shopCancel').addEventListener('click', resetShopForm);
+
+  // фильтры чата
+  $('filtersToggle').addEventListener('change', onFiltersToggle);
+  $('filtersForm').addEventListener('submit', onFiltersSubmit);
+  for (const evName of ['input', 'change']) $('filterBlocks').addEventListener(evName, () => { if (S) S.dirtyFilters = true; });
 
   $('timerToggle').addEventListener('change', onTimerToggle);
   $('intervalForm').addEventListener('submit', onIntervalSubmit);

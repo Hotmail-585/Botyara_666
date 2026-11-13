@@ -79,10 +79,11 @@
           <summary>Что умеет бот</summary>
           <ul class="plain">
             <li><strong>!rank</strong>: бот пишет в чат ваш текущий ранг в Valorant.</li>
-            <li><strong>Свои команды</strong>: например, <code>!discord</code> отвечает ссылкой на сервер. В тексте можно использовать <code>{user}</code>: вместо него бот подставит ник того, кто написал команду.</li>
+            <li><strong>Свои команды</strong>: например, <code>!discord</code> отвечает ссылкой на сервер. В тексте работают переменные (<code>{user}</code>, <code>{touser}</code>, <code>{args}</code>, <code>{count}</code>, <code>{channel}</code>, <code>{random 1-100}</code>), у каждой команды можно задать, кто её вызывает, кулдаун и алиасы.</li>
             <li><strong>Авто-сообщения</strong>: бот сам пишет их в чат по очереди через заданное число минут, если в чате в это время кто-то общается.</li>
+            <li><strong>Фильтры чата</strong>: ссылки, капс, повторы, спам эмоутами, запрещённые слова. Бот удаляет сообщение или выдаёт таймаут (модераторов и стримера не трогает).</li>
             <li><strong>Valorant</strong>: <code>!peak</code> (пиковый ранг), <code>!lastgame</code> (последняя игра), <code>!today</code> (итоги за 12 часов), <code>!rank Ник#Тег</code> (ранг любого игрока), несколько аккаунтов.</li>
-            <li><strong>Мини-игры</strong> (включаются в кабинете): <code>!8ball</code>, <code>!dice</code>, <code>!coin</code>, <code>!duel</code>.</li>
+            <li><strong>Мини-игры и очки</strong> (включаются в кабинете): ставки, магазин наград, предсказания на исход матча.</li>
           </ul>
         </details>
         <details>
@@ -157,6 +158,7 @@
           <button class="navbtn" type="button" data-nav="valorant"><span class="ico" aria-hidden="true">🎯</span><span>Valorant</span></button>
           <button class="navbtn" type="button" data-nav="commands"><span class="ico" aria-hidden="true">💬</span><span>Команды</span></button>
           <button class="navbtn" type="button" data-nav="timers"><span class="ico" aria-hidden="true">⏱</span><span>Авто-сообщения</span></button>
+          <button class="navbtn" type="button" data-nav="filters"><span class="ico" aria-hidden="true">🛡</span><span>Фильтры</span></button>
           <button class="navbtn" type="button" data-nav="games"><span class="ico" aria-hidden="true">🎲</span><span>Игры</span></button>
           <button class="navbtn" type="button" data-nav="points"><span class="ico" aria-hidden="true">🪙</span><span>Очки</span></button>
           <button class="navbtn" type="button" data-nav="shop"><span class="ico" aria-hidden="true">🛒</span><span>Магазин</span><span id="shopBadge" class="badge" hidden></span></button>
@@ -168,7 +170,7 @@
           <div id="panel-overview" class="panel" data-panel="overview" hidden>
             <div id="modHint" class="card hint-card" hidden>
               <h2>Последний шаг: выдайте боту модератора</h2>
-              <p>Бот подключён к вашему каналу. Чтобы он писал без ограничений Twitch, напишите в своём чате: <code id="modCmd">/mod бот</code></p>
+              <p>Бот подключён к вашему каналу. Чтобы он писал без ограничений Twitch (и работали фильтры чата), напишите в своём чате: <code id="modCmd">/mod бот</code></p>
               <button id="modHintClose" class="btn small" type="button">Понятно</button>
             </div>
 
@@ -263,7 +265,7 @@
       <!-- Команды -->
       <div class="card">
         <h2>Свои команды</h2>
-        <p class="muted">Зритель пишет команду, бот отвечает текстом. В тексте можно использовать <code>{user}</code>: бот подставит ник написавшего.</p>
+        <p class="muted">Зритель пишет команду, бот отвечает текстом. Для каждой команды можно выбрать, кто её вызывает, кулдаун и алиасы (другие названия той же команды).</p>
         <ul id="cmdList" class="list"></ul>
         <p id="cmdEmpty" class="empty" hidden>Пока нет ни одной команды.</p>
         <form id="cmdForm" class="editor" novalidate>
@@ -276,6 +278,27 @@
             <span>Ответ бота <small id="cmdCount" class="counter"></small></span>
             <textarea id="cmdText" rows="3" maxlength="400" placeholder="Заходи к нам в Discord: https://… , {user}!"></textarea>
           </label>
+          <p class="hint">Переменные в тексте: <code>{user}</code> ник написавшего, <code>{touser}</code> первое слово после команды (например <code>!hug @ник</code>; если его нет, то ник написавшего), <code>{args}</code> весь текст после команды, <code>{count}</code> сколько раз вызвали команду, <code>{channel}</code> название канала, <code>{random 1-100}</code> случайное число. Авто-сообщения отправляются как есть, без переменных.</p>
+          <div class="grid3">
+            <label class="field">
+              <span>Кто может вызывать</span>
+              <select id="cmdPerm">
+                <option value="all">Все зрители</option>
+                <option value="sub">Подписчики и выше</option>
+                <option value="vip">VIP и выше</option>
+                <option value="mod">Только модераторы</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Кулдаун, секунд</span>
+              <input id="cmdCd" type="text" inputmode="numeric" autocomplete="off" placeholder="5">
+            </label>
+            <label class="field">
+              <span>Алиасы (через запятую)</span>
+              <input id="cmdAliases" type="text" autocomplete="off" spellcheck="false" placeholder="!ds, !дис">
+            </label>
+          </div>
+          <p class="hint">Кулдаун общий для всего чата (0: без ограничений, пусто: 5 секунд). Стример и модераторы проходят проверку «кто может вызывать» всегда. «Подписчики и выше» включает VIP, модераторов и стримера.</p>
           <div id="cmdPreview" class="preview" aria-label="Предпросмотр в чате" hidden></div>
           <p id="cmdError" class="error" hidden></p>
           <div class="row gap">
@@ -334,6 +357,33 @@
         </form>
       </div>
 
+          </div>
+
+          <!-- Фильтры чата -->
+          <div id="panel-filters" class="panel" data-panel="filters" hidden>
+            <div class="card row between">
+              <div>
+                <h2>Фильтры чата</h2>
+                <p class="muted">Бот проверяет сообщения зрителей и удаляет их или выдаёт таймаут. Стример и модераторы канала никогда не проверяются. В чате модератор может переключать всё сразу: <code>!filters on</code> / <code>!filters off</code>, а <code>!permit @ник</code> разрешает человеку одну ссылку на 60 секунд.</p>
+              </div>
+              <label class="switch">
+                <input id="filtersToggle" type="checkbox">
+                <span class="slider"></span>
+                <span id="filtersLabel" class="switch-label"></span>
+              </label>
+            </div>
+
+            <div class="card hint-card">
+              <p>Чтобы фильтры работали, бот должен быть модератором вашего канала (<code>/mod имя_бота</code>), а владелец бота должен выдать его токену права <code>moderator:manage:chat_messages</code> и <code>moderator:manage:banned_users</code>. Если прав нет, бот ничего не удаляет и сообщает об этом владельцу.</p>
+            </div>
+
+            <form id="filtersForm" class="card" novalidate>
+              <h2>Настройки фильтров</h2>
+              <p class="muted">У каждого фильтра свой переключатель. Действие «таймаут» использует длительность, а при действии «удалить» длительность не применяется (но поле всё равно должно быть заполнено).</p>
+              <div id="filterBlocks"></div>
+              <p id="filtersError" class="error" hidden></p>
+              <button id="filtersSave" class="btn primary" type="submit">Сохранить фильтры</button>
+            </form>
           </div>
 
           <!-- Игры -->
@@ -424,6 +474,19 @@
             </div>
 
             <div class="card">
+              <h2>Предсказания</h2>
+              <p class="muted">Зрители ставят очки на то, победит ли стример в текущем матче. Работает, когда включены очки. Ведёт предсказание модератор или стример в чате:</p>
+              <ul class="plain">
+                <li><code>!pred start 120</code>: открыть приём ставок на 120 секунд (от 10 до 900; без числа: 120).</li>
+                <li>Зрители: <code>!bet win 100</code> (победа) или <code>!bet lose 100</code> (поражение). <code>all</code> ставит максимум. Одну сторону можно добавлять, сменить сторону нельзя. Общий максимум на человека: «Максимальная ставка» из настроек выше.</li>
+                <li><code>!pred close</code>: закрыть ставки раньше времени. <code>!pred</code> без слов: показать сводку.</li>
+                <li>Итог: <code>!pred win</code> или <code>!pred lose</code> вручную, либо <code>!pred auto</code>: бот сам подведёт итог, когда HenrikDev покажет новую завершённую игру активного аккаунта (включайте во время матча; данные HenrikDev могут появиться с задержкой).</li>
+                <li><code>!pred cancel</code>: отменить, все ставки возвращаются.</li>
+              </ul>
+              <p class="hint">Банк делится между выигравшими пропорционально их ставкам. Если ставки есть только на одну сторону или итог отменён, всем возвращаются очки. Забытое предсказание отменяется через 6 часов. Состояние предсказания в кабинете не показывается: оно видно в чате.</p>
+            </div>
+
+            <div class="card">
               <div class="row between">
                 <div>
                   <h2>Таблица лидеров <span id="pointsTotal" class="muted small"></span></h2>
@@ -476,7 +539,7 @@
       <!-- Модераторы кабинета (только владелец канала) -->
       <div id="modsCard" class="card">
         <h2>Модераторы кабинета</h2>
-        <p class="muted">Добавьте человека по нику Twitch, и он сможет войти на этот сайт под своим аккаунтом (Google и привязка Twitch) и управлять вашим ботом: команды, авто-сообщения, аккаунты Valorant, игры, кнопка «Тест». Удалить канал и управлять списком модераторов может только владелец.</p>
+        <p class="muted">Добавьте человека по нику Twitch, и он сможет войти на этот сайт под своим аккаунтом (Google и привязка Twitch) и управлять вашим ботом: команды, авто-сообщения, фильтры, аккаунты Valorant, игры, кнопка «Тест». Удалить канал и управлять списком модераторов может только владелец.</p>
         <ul id="modList" class="list"></ul>
         <p id="modEmpty" class="empty" hidden>Модераторов пока нет.</p>
         <form id="modForm" class="row gap end" novalidate>
@@ -506,7 +569,7 @@
         <div class="row between">
           <div>
             <h2>Оповещения</h2>
-            <p class="muted">Важные события: упал Twitch или HenrikDev, ключ отклонён, канал отключён. Сайт показывает их, пока открыт в браузере. Если бот упал совсем, он не сможет написать об этом сам: тогда вверху будет «Бот не отвечает».</p>
+            <p class="muted">Важные события: упал Twitch или HenrikDev, ключ отклонён, канал отключён, у бота нет прав на модерацию. Сайт показывает их, пока открыт в браузере. Если бот упал совсем, он не сможет написать об этом сам: тогда вверху будет «Бот не отвечает».</p>
           </div>
           <button id="notifyBtn" class="btn small" type="button" hidden>Уведомления в браузере</button>
         </div>

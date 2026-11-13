@@ -13,13 +13,16 @@ export const LIMITS = {
   intervalMax: 1440,
 };
 
-// Встроенные команды бота: свои команды с такими именами бот, скорее всего, не вызовет.
+// Встроенные команды бота: свои команды и алиасы с такими именами создать нельзя.
 export const RESERVED_COMMANDS = [
   '!rank', '!setrank', '!join', '!leave',
   '!ранг', '!peak', '!lastgame', '!today', '!сегодня', '!acc', '!addacc', '!delacc',
   '!8ball', '!dice', '!coin', '!duel', '!games',
   '!rps', '!love', '!agent', '!map', '!roulette',
   '!points', '!очки', '!top', '!daily', '!give', '!gift', '!shop', '!buy', '!accept', '!принять', '!pts',
+  '!команды', '!commands', '!status', '!help', '!list',
+  '!addcom', '!editcom', '!delcom', '!addtimer', '!deltimer', '!timer', '!timers',
+  '!bet', '!pred', '!permit', '!filters',
 ];
 export const MAX_ACCOUNTS = 5;   // основной + до 4 дополнительных
 
@@ -95,6 +98,70 @@ export function validateInterval(input) {
   return ok(n);
 }
 
+// ---------- Права, кулдаун и алиасы своих команд ----------
+
+export const PERM_LEVELS = [
+  ['all', 'Все зрители'],
+  ['sub', 'Подписчики и выше'],
+  ['vip', 'VIP и выше'],
+  ['mod', 'Только модераторы'],
+];
+export const PERM_SHORT = { all: 'все', sub: 'подписчики+', vip: 'VIP+', mod: 'модераторы' };
+export const CMD_CD = { min: 0, max: 3600, def: 5 };   // кулдаун на канал, секунд
+export const ALIASES_MAX = 30;                          // алиасов на весь канал
+export const ALIASES_PER_CMD = 5;
+const CMD_KEY = /^![^ ]{1,20}$/;
+
+export function validateCmdOptions(permInput, cdInput) {
+  const perm = String(permInput ?? 'all').trim().toLowerCase() || 'all';
+  if (!PERM_LEVELS.some(([k]) => k === perm)) return fail('Выберите, кто может вызывать команду.');
+  const raw = String(cdInput ?? '').trim();
+  let cd = CMD_CD.def;
+  if (raw !== '') {
+    if (!/^\d+$/.test(raw) || Number(raw) > CMD_CD.max) {
+      return fail(`Кулдаун: целое число секунд от ${CMD_CD.min} до ${CMD_CD.max} (пусто = ${CMD_CD.def}).`);
+    }
+    cd = Number(raw);
+  }
+  return ok({ perm, cd });
+}
+
+// Строка "!ds, !дс" -> список названий. self — название самой команды (алиас не может совпадать с ним).
+export function parseAliasList(input, self = '') {
+  const parts = String(input ?? '').split(/[\s,;]+/).map((s) => s.trim()).filter(Boolean);
+  const out = [];
+  for (const p of parts) {
+    const r = validateCommandName(p);
+    if (!r.ok) return fail(`Алиас «${p}»: ${r.error}`);
+    if (r.value === self) return fail('Алиас не может совпадать с названием самой команды.');
+    if (!out.includes(r.value)) out.push(r.value);
+  }
+  if (out.length > ALIASES_PER_CMD) return fail(`Не больше ${ALIASES_PER_CMD} алиасов на одну команду.`);
+  return ok(out);
+}
+
+function cmdOptsOf(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw)) {
+    if (!CMD_KEY.test(k) || !v || typeof v !== 'object') continue;
+    out[k] = {
+      perm: PERM_LEVELS.some(([p]) => p === v.perm) ? v.perm : 'all',
+      cd: Number.isInteger(v.cd) && v.cd >= CMD_CD.min && v.cd <= CMD_CD.max ? v.cd : CMD_CD.def,
+    };
+  }
+  return out;
+}
+
+function aliasesOf(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [k, v] of Object.entries(raw)) {
+    if (CMD_KEY.test(k) && typeof v === 'string' && CMD_KEY.test(v)) out[k] = v;
+  }
+  return out;
+}
+
 // ---------- Авто-сообщения ----------
 
 // Из значения узла timers (массив, объект с ключами или null) получаем плотный массив строк
@@ -146,6 +213,118 @@ export function timersRemove(index, oldText) {
   };
 }
 
+// ---------- Фильтры чата ----------
+
+export const FILTER_KINDS = ['links', 'caps', 'repeat', 'emotes', 'words'];
+export const FILTER_NAMES = {
+  links: 'Ссылки',
+  caps: 'Капс',
+  repeat: 'Повторы',
+  emotes: 'Спам эмоутами',
+  words: 'Запрещённые слова',
+};
+export const FILTER_SEC = { min: 1, max: 86400, def: 10 };   // длительность таймаута
+export const FILTER_PARAMS = {
+  caps: {
+    minLen: { min: 5, max: 200, def: 15, label: 'Минимум букв в сообщении' },
+    percent: { min: 50, max: 100, def: 70, label: 'Доля заглавных букв, %' },
+  },
+  repeat: { times: { min: 2, max: 10, def: 3, label: 'Одинаковых сообщений подряд' } },
+  emotes: { max: { min: 3, max: 50, def: 10, label: 'Максимум эмоутов в сообщении' } },
+};
+export const FILTER_TEXT_MAX = { allow: 300, list: 1500 };
+
+const intIn = (v, spec) => (Number.isInteger(v) && v >= spec.min && v <= spec.max ? v : spec.def);
+
+// Настройки фильтров из узла channels/{ник}/filters (нет поля = значение по умолчанию, как у бота).
+export function filtersSettings(raw) {
+  const f = raw && typeof raw === 'object' ? raw : {};
+  const out = { on: f.on === true };
+  for (const kind of FILTER_KINDS) {
+    const x = f[kind] && typeof f[kind] === 'object' ? f[kind] : {};
+    const o = { on: x.on === true, action: x.action === 'timeout' ? 'timeout' : 'delete', sec: intIn(x.sec, FILTER_SEC) };
+    for (const [k, spec] of Object.entries(FILTER_PARAMS[kind] || {})) o[k] = intIn(x[k], spec);
+    if (kind === 'links') o.allow = typeof x.allow === 'string' ? x.allow : '';
+    if (kind === 'words') o.list = typeof x.list === 'string' ? x.list : '';
+    out[kind] = o;
+  }
+  return out;
+}
+
+// "twitch.tv, https://www.youtube.com/x" -> "twitch.tv,youtube.com"
+export function parseDomainList(input) {
+  const parts = String(input ?? '')
+    .split(/[\s,;]+/)
+    .map((s) => s.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/[\/?#].*$/, ''))
+    .filter(Boolean);
+  const out = [];
+  for (const p of parts) {
+    if (p.length > 60 || !/^[\p{L}\p{N}-]+(\.[\p{L}\p{N}-]+)+$/u.test(p)) {
+      return fail(`Сайт «${p}»: укажите домен, например twitch.tv.`);
+    }
+    if (!out.includes(p)) out.push(p);
+  }
+  if (out.length > 20) return fail('Не больше 20 разрешённых сайтов.');
+  const joined = out.join(',');
+  if (joined.length > FILTER_TEXT_MAX.allow) return fail(`Список сайтов слишком длинный (максимум ${FILTER_TEXT_MAX.allow} символов).`);
+  return ok(joined);
+}
+
+// Слова и фразы через запятую или с новой строки -> "слово,фраза".
+export function parseWordList(input) {
+  const parts = String(input ?? '')
+    .split(/[,;\n]+/)
+    .map((s) => s.replace(/\s+/g, ' ').trim().toLowerCase())
+    .filter(Boolean);
+  const out = [];
+  for (const p of parts) {
+    if (p.length < 2 || p.length > 40) return fail(`Слово «${p}»: от 2 до 40 символов.`);
+    if (!out.includes(p)) out.push(p);
+  }
+  if (out.length > 50) return fail('Не больше 50 слов и фраз.');
+  const joined = out.join(',');
+  if (joined.length > FILTER_TEXT_MAX.list) return fail(`Список слишком длинный (максимум ${FILTER_TEXT_MAX.list} символов).`);
+  return ok(joined);
+}
+
+// form: { links: {action, sec, allow}, caps: {action, sec, minLen, percent}, repeat: {..., times},
+//         emotes: {..., max}, words: {..., list} } (всё строки).
+// Результат: плоский объект {"links/action": "...", ...} для update() внутри channels/{ник}/filters.
+export function validateFilterSettings(form) {
+  const out = {};
+  for (const kind of FILTER_KINDS) {
+    const f = (form && form[kind]) || {};
+    const name = FILTER_NAMES[kind];
+    out[`${kind}/action`] = f.action === 'timeout' ? 'timeout' : 'delete';
+
+    const secRaw = String(f.sec ?? '').trim();
+    if (!/^\d+$/.test(secRaw) || Number(secRaw) < FILTER_SEC.min || Number(secRaw) > FILTER_SEC.max) {
+      return fail(`${name}: длительность таймаута — целое число секунд от ${FILTER_SEC.min} до ${FILTER_SEC.max}.`);
+    }
+    out[`${kind}/sec`] = Number(secRaw);
+
+    for (const [k, spec] of Object.entries(FILTER_PARAMS[kind] || {})) {
+      const raw = String(f[k] ?? '').trim();
+      if (!/^\d+$/.test(raw) || Number(raw) < spec.min || Number(raw) > spec.max) {
+        return fail(`${name}, «${spec.label}»: целое число от ${spec.min} до ${spec.max}.`);
+      }
+      out[`${kind}/${k}`] = Number(raw);
+    }
+
+    if (kind === 'links') {
+      const r = parseDomainList(f.allow);
+      if (!r.ok) return r;
+      out['links/allow'] = r.value === '' ? null : r.value;
+    }
+    if (kind === 'words') {
+      const r = parseWordList(f.list);
+      if (!r.ok) return r;
+      out['words/list'] = r.value === '' ? null : r.value;
+    }
+  }
+  return ok(out);
+}
+
 // ---------- Данные канала ----------
 
 // Приводим узел channels/{ник} к удобному виду для интерфейса.
@@ -162,11 +341,14 @@ export function normalizeChannel(raw) {
     commands: Object.entries(commands)
       .filter(([, v]) => typeof v === 'string')
       .sort(([a], [b]) => a.localeCompare(b, 'ru')),
+    cmdOpts: cmdOptsOf(raw.cmdOpts),      // название -> { perm, cd }
+    aliases: aliasesOf(raw.aliases),      // алиас -> название команды
     timers: timersToList(raw.timers),
     games: raw.games === true,
     roulette: raw.roulette === true,
     points: pointsSettings(raw.points),
     shop: shopToList(raw.shop),
+    filters: filtersSettings(raw.filters),
     accounts: accountsToList(raw.accounts),
     activeAccount: Number.isInteger(raw.activeAccount) && raw.activeAccount >= 1 && raw.activeAccount <= MAX_ACCOUNTS ? raw.activeAccount : 1,
   };
@@ -200,9 +382,27 @@ export function validateModLogin(input) {
   return ok(v);
 }
 
-// Предпросмотр: так сообщение увидят в чате ({user} -> ник зрителя).
-export function renderPreview(text, user = 'Зритель') {
-  return String(text ?? '').replace(/\{user\}/gi, user);
+// Предпросмотр: так сообщение увидят в чате. Список переменных такой же, как в bot.js (renderTemplate).
+// vars = false: ничего не подставлять (авто-сообщения отправляются как есть).
+export function renderPreview(text, user = 'Зритель', vars = true) {
+  const src = String(text ?? '');
+  if (!vars) return src;
+  return src.replace(/\{(user|touser|args|count|channel|random)(?:[ :]+(\d{1,9})\s*-\s*(\d{1,9}))?\}/gi, (m, name, a, b) => {
+    switch (name.toLowerCase()) {
+      case 'user': return user;
+      case 'touser': return 'Друг';
+      case 'args': return 'текст';
+      case 'count': return '42';
+      case 'channel': return 'ваш_канал';
+      case 'random': {
+        if (a === undefined) return m;
+        const lo = Math.min(Number(a), Number(b));
+        const hi = Math.max(Number(a), Number(b));
+        return String(Math.floor((lo + hi) / 2));
+      }
+      default: return m;
+    }
+  });
 }
 
 // ---------- Админ-панель ----------
