@@ -72,6 +72,14 @@ main.wrap.wide { max-width: 1000px; }
 /* Переключатель каналов, предпросмотр, модераторы */
 .chanbar { margin-bottom: 16px; }
 .chanbar .field { margin: 0; }
+/* Выбор канала внизу меню слева: компактный */
+.side .chanbar { margin: 10px 0 0; padding: 10px 6px 4px; border-top: 1px solid var(--border); }
+.side .chanbar .field { gap: 4px; font-size: .72rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.side .chanbar select { width: 100%; min-height: 0; padding: 6px 8px; font-size: .85rem; font-weight: 600; letter-spacing: 0; text-transform: none; }
+.side .chanbar .hint { margin: 6px 0 0; font-size: .75rem; color: var(--accent-ink); overflow-wrap: anywhere; }
+@media (max-width: 860px) {
+  .side .chanbar { order: -1; flex: none; min-width: 160px; margin: 0; padding: 0 8px 0 4px; border-top: 0; border-right: 1px solid var(--border); }
+}
 .field.grow { flex: 1 1 220px; }
 .preview {
   margin: 4px 0 12px; padding: 10px 12px; border: 1px dashed var(--border);

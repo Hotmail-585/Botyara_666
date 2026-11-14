@@ -144,6 +144,10 @@ function renderChanBar() {
   const show = !!S && !!S.nick && list.length > 0 && (currentView === 'dashboard' || currentView === 'nochannel');
   bar.hidden = !show;
   if (!show) return;
+  // В кабинете выбор канала лежит внизу меню слева; на экране «нет канала» меню нет, там он остаётся карточкой сверху.
+  const host = currentView === 'dashboard' ? $('sideNav') : $('chanBarHome');
+  if (bar.parentNode !== host) host.append(bar);
+  bar.classList.toggle('card', host !== $('sideNav'));
   const sel = $('chanSelect');
   const options = [S.nick, ...list];
   const key = options.join(',');
@@ -152,13 +156,11 @@ function renderChanBar() {
     sel.replaceChildren(...options.map((n) => el('option', { value: n, text: n === S.nick ? `${n} (мой канал)` : n })));
   }
   sel.value = S.active;
-  $('chanBarNote').textContent = S.isAdmin
-    ? (isOwn()
-      ? 'Вы владелец бота: здесь можно открыть любой подключённый канал и проверить его настройки, как модератор.'
-      : `Вы смотрите канал ${S.active} как владелец бота: права модератора, изменения сразу видны стримеру.`)
-    : isOwn()
-      ? 'Вас добавили модератором на других каналах: выберите канал, чтобы управлять ботом там.'
-      : `Вы управляете каналом ${S.active} как модератор: можно править команды, авто-сообщения, фильтры, аккаунты Valorant и игры.`;
+  sel.title = S.isAdmin
+    ? 'Вы владелец бота: можно открыть любой подключённый канал и проверить его настройки с правами модератора.'
+    : 'Выберите канал, которым хотите управлять. На чужих каналах доступны команды, авто-сообщения, фильтры, Valorant и игры.';
+  $('chanBarNote').textContent = isOwn() ? '' : `Чужой канал: ${S.active}`;
+  $('chanBarNote').hidden = isOwn();
 }
 
 let toastTimer = null;
