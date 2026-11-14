@@ -127,23 +127,38 @@ function showView(name) {
   renderChanBar();
 }
 
-// Выбор канала: виден, только если нас добавили модератором чужого канала.
+// Каналы, которые можно открыть, кроме своего: куда нас добавили модератором, а владельцу бота ещё и все подключённые.
+function viewList() {
+  const set = new Set(S.access);
+  if (S.isAdmin && S.admin && S.admin.channels && typeof S.admin.channels === 'object') {
+    for (const k of Object.keys(S.admin.channels)) if (LOGIN_RE.test(k)) set.add(k);
+  }
+  set.delete(S.nick);
+  return [...set].sort();
+}
+
+// Выбор канала: виден, если нас добавили модератором чужого канала или мы владелец бота.
 function renderChanBar() {
   const bar = $('chanBar');
-  const show = !!S && !!S.nick && S.access.length > 0 && (currentView === 'dashboard' || currentView === 'nochannel');
+  const list = S && S.nick ? viewList() : [];
+  const show = !!S && !!S.nick && list.length > 0 && (currentView === 'dashboard' || currentView === 'nochannel');
   bar.hidden = !show;
   if (!show) return;
   const sel = $('chanSelect');
-  const options = [S.nick, ...S.access];
+  const options = [S.nick, ...list];
   const key = options.join(',');
   if (sel.dataset.key !== key) {
     sel.dataset.key = key;
     sel.replaceChildren(...options.map((n) => el('option', { value: n, text: n === S.nick ? `${n} (мой канал)` : n })));
   }
   sel.value = S.active;
-  $('chanBarNote').textContent = isOwn()
-    ? 'Вас добавили модератором на других каналах: выберите канал, чтобы управлять ботом там.'
-    : `Вы управляете каналом ${S.active} как модератор: можно править команды, авто-сообщения, фильтры, аккаунты Valorant и игры.`;
+  $('chanBarNote').textContent = S.isAdmin
+    ? (isOwn()
+      ? 'Вы владелец бота: здесь можно открыть любой подключённый канал и проверить его настройки, как модератор.'
+      : `Вы смотрите канал ${S.active} как владелец бота: права модератора, изменения сразу видны стримеру.`)
+    : isOwn()
+      ? 'Вас добавили модератором на других каналах: выберите канал, чтобы управлять ботом там.'
+      : `Вы управляете каналом ${S.active} как модератор: можно править команды, авто-сообщения, фильтры, аккаунты Valorant и игры.`;
 }
 
 let toastTimer = null;
@@ -512,7 +527,7 @@ function subscribeAccess() {
       if (!S || S.id !== sid || S.nick !== nick) return;
       S.access = loginsOf(snap.val(), nick);
       S.accessLoaded = true;
-      if (!isOwn() && !S.access.includes(S.active)) {
+      if (!isOwn() && !viewList().includes(S.active)) {
         toast(`Доступ к каналу ${S.active} закрыт. Открыт ваш канал.`, 'err');
         switchChannel(nick);
       }
@@ -1382,6 +1397,7 @@ function startAdmin() {
         S.admin.loaded[key] = true;
         delete S.admin.errors[key];
         if (key === 'status') checkAdminEvents();
+        if (key === 'channels') renderChanBar();
         scheduleAdminRender(...parts, ...(Object.keys(S.admin.errors).length ? ['status'] : []));
       },
       (err) => {
@@ -1575,6 +1591,10 @@ function renderAdminChannels() {
     ]);
 
     const actions = [];
+    actions.push(el('button', {
+      class: 'btn small', type: 'button', text: 'Открыть в кабинете',
+      onclick: () => openChannelAsAdmin(r.nick),
+    }));
     if (r.status !== 'blocked') {
       actions.push(el('button', {
         class: 'btn small', type: 'button', text: r.enabled ? 'Выключить' : 'Включить',
@@ -1624,6 +1644,13 @@ function renderLimits() {
 }
 
 // ---------- Админ-панель: действия ----------
+
+// Владелец бота открывает любой канал в обычном кабинете (с правами модератора).
+function openChannelAsAdmin(nick) {
+  if (!S || !S.isAdmin || !LOGIN_RE.test(nick)) return;
+  if (nick !== S.active) switchChannel(nick);
+  setTab('cabinet');
+}
 
 async function adminSetEnabled(nick, on) {
   await save(
