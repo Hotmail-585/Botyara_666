@@ -6,14 +6,47 @@
   <meta name="color-scheme" content="dark light">
   <meta name="referrer" content="no-referrer">
   <title>Кабинет Twitch-бота</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <script>
+    // Тема выбирается до отрисовки, чтобы страница не мигала
+    try { var t = localStorage.getItem('bot_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) { /* не страшно */ }
+  </script>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="admin.css">
   <script type="module" src="app.js"></script>
 </head>
 <body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <defs>
+      <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></symbol>
+      <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/></symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.5 7.2L3 21l1.8-5.5A8 8 0 1 1 21 12z"/></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></symbol>
+      <symbol id="i-dice" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M8.5 8.5h.01M15.5 15.5h.01M12 12h.01M15.5 8.5h.01M8.5 15.5h.01"/></symbol>
+      <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/></symbol>
+      <symbol id="i-crystal" viewBox="0 0 24 24"><path d="M12 2l9 10-9 10L3 12z"/><path d="M3 12h18"/></symbol>
+      <symbol id="i-cart" viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 12.4a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6"/></symbol>
+      <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M17.5 14.5a5 5 0 0 1 4 5.5"/></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></symbol>
+      <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="4"/><path d="M12 4v4M9 14h.01M15 14h.01"/><circle cx="12" cy="3" r="1"/></symbol>
+      <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+      <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2-6z"/></symbol>
+    </defs>
+  </svg>
   <header class="topbar">
     <div class="wrap topbar-in">
-      <div class="brand">Кабинет бота</div>
+      <div class="brand"><span class="logo"><img src="logo.png" alt="" width="32" height="32"></span><span>Кабинет бота</span></div>
+      <div class="tools">
+        <button id="newsBtn" class="iconbtn" type="button" aria-haspopup="dialog">
+          <svg class="ico"><use href="#i-spark"/></svg><span class="lbl">Что нового</span><span id="newsPip" class="pip" hidden></span>
+        </button>
+        <button id="themeBtn" class="iconbtn" type="button" aria-label="Переключить тему" title="Светлая или тёмная тема">
+          <svg class="ico"><use id="themeIcon" href="#i-sun"/></svg>
+        </button>
+      </div>
       <div id="userbox" class="userbox" hidden>
         <span id="userNick" class="usernick"></span>
         <button id="unlinkBtn" class="btn ghost small" type="button" hidden>Отвязать Twitch</button>
@@ -83,7 +116,7 @@
             <li><strong>Авто-сообщения</strong>: бот сам пишет их в чат по очереди через заданное число минут, если в чате в это время кто-то общается.</li>
             <li><strong>Фильтры чата</strong>: ссылки, капс, повторы, спам эмоутами, запрещённые слова. Бот удаляет сообщение или выдаёт таймаут (модераторов и стримера не трогает).</li>
             <li><strong>Valorant</strong>: <code>!peak</code> (пиковый ранг), <code>!lastgame</code> (последняя игра), <code>!today</code> (итоги за 12 часов), <code>!rank Ник#Тег</code> (ранг любого игрока), несколько аккаунтов.</li>
-            <li><strong>Мини-игры и очки</strong> (включаются в кабинете): ставки, магазин наград, предсказания на исход матча.</li>
+            <li><strong>Мини-игры и очки</strong> (включаются в кабинете): ставки, магазин наград. Отдельно: предсказания Twitch на баллы канала.</li>
           </ul>
         </details>
         <details>
@@ -154,20 +187,35 @@
     <section id="view-dashboard" class="view" hidden>
       <div class="cab">
         <nav id="sideNav" class="side" aria-label="Разделы кабинета">
-          <button class="navbtn" type="button" data-nav="overview"><span class="ico" aria-hidden="true">🏠</span><span>Обзор</span></button>
-          <button class="navbtn" type="button" data-nav="valorant"><span class="ico" aria-hidden="true">🎯</span><span>Valorant</span></button>
-          <button class="navbtn" type="button" data-nav="commands"><span class="ico" aria-hidden="true">💬</span><span>Команды</span></button>
-          <button class="navbtn" type="button" data-nav="timers"><span class="ico" aria-hidden="true">⏱</span><span>Авто-сообщения</span></button>
-          <button class="navbtn" type="button" data-nav="filters"><span class="ico" aria-hidden="true">🛡</span><span>Фильтры</span></button>
-          <button class="navbtn" type="button" data-nav="games"><span class="ico" aria-hidden="true">🎲</span><span>Игры</span></button>
-          <button class="navbtn" type="button" data-nav="points"><span class="ico" aria-hidden="true">🪙</span><span>Очки</span></button>
-          <button class="navbtn" type="button" data-nav="shop"><span class="ico" aria-hidden="true">🛒</span><span>Магазин</span><span id="shopBadge" class="badge" hidden></span></button>
-          <button class="navbtn" type="button" data-nav="mods"><span class="ico" aria-hidden="true">👥</span><span>Модераторы</span></button>
+          <div class="navgroup">Главное</div>
+          <button class="navbtn" type="button" data-nav="overview"><svg class="ico" aria-hidden="true"><use href="#i-home"/></svg><span>Обзор</span></button>
+          <button class="navbtn" type="button" data-nav="valorant"><svg class="ico" aria-hidden="true"><use href="#i-target"/></svg><span>Valorant</span></button>
+          <div class="navgroup">Автоматизация</div>
+          <button class="navbtn" type="button" data-nav="commands"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg><span>Команды</span></button>
+          <button class="navbtn" type="button" data-nav="timers"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><span>Авто-сообщения</span></button>
+          <button class="navbtn" type="button" data-nav="filters"><svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg><span>Фильтры</span></button>
+          <div class="navgroup">Зрители</div>
+          <button class="navbtn" type="button" data-nav="games"><svg class="ico" aria-hidden="true"><use href="#i-dice"/></svg><span>Игры</span></button>
+          <button class="navbtn" type="button" data-nav="points"><svg class="ico" aria-hidden="true"><use href="#i-coin"/></svg><span>Очки</span></button>
+          <button class="navbtn" type="button" data-nav="pred"><svg class="ico" aria-hidden="true"><use href="#i-crystal"/></svg><span>Предсказания</span></button>
+          <button class="navbtn" type="button" data-nav="shop"><svg class="ico" aria-hidden="true"><use href="#i-cart"/></svg><span>Магазин</span><span id="shopBadge" class="badge" hidden></span></button>
+          <div id="navGroupManage" class="navgroup">Управление</div>
+          <button class="navbtn" type="button" data-nav="mods"><svg class="ico" aria-hidden="true"><use href="#i-users"/></svg><span>Модераторы</span></button>
         </nav>
 
         <div class="content">
           <!-- Обзор -->
           <div id="panel-overview" class="panel" data-panel="overview" hidden>
+            <div class="pagehead">
+              <h1 id="ovTitle">Добро пожаловать!</h1>
+              <p>Состояние бота и статистика канала</p>
+            </div>
+            <div class="stats">
+              <div class="stat"><div class="k">Бот</div><div id="stBot" class="v">…</div></div>
+              <div class="stat"><div class="k">Свои команды</div><div id="stCmds" class="v">…</div></div>
+              <div class="stat"><div class="k">Предсказания Twitch</div><div id="stPred" class="v">…</div></div>
+              <div class="stat"><div class="k">Очки</div><div id="stPts" class="v">…</div></div>
+            </div>
             <div id="modHint" class="card hint-card" hidden>
               <h2>Последний шаг: выдайте боту модератора</h2>
               <p>Бот подключён к вашему каналу. Чтобы он писал без ограничений Twitch (и работали фильтры чата), напишите в своём чате: <code id="modCmd">/mod бот</code></p>
@@ -189,6 +237,15 @@
             <div class="card">
               <h2>Сводка</h2>
               <dl id="summary" class="kv"></dl>
+            </div>
+
+            <div class="card">
+              <div class="row between">
+                <h2>Топ по очкам</h2>
+                <button id="ovTopMore" class="btn small ghost" type="button">Вся таблица</button>
+              </div>
+              <ol id="ovTop" class="toplist"></ol>
+              <p id="ovTopEmpty" class="empty" hidden>Пока ни у кого нет очков.</p>
             </div>
 
             <div class="card muted small">
@@ -374,7 +431,7 @@
             </div>
 
             <div class="card hint-card">
-              <p>Чтобы фильтры работали, бот должен быть модератором вашего канала (<code>/mod имя_бота</code>), Если прав нет, бот ничего не удаляет и сообщает об этом владельцу.</p>
+              <p>Чтобы фильтры работали, бот должен быть модератором вашего канала (<code>/mod имя_бота</code>), а владелец бота должен выдать его токену права <code>moderator:manage:chat_messages</code> и <code>moderator:manage:banned_users</code>. Если прав нет, бот ничего не удаляет и сообщает об этом владельцу.</p>
             </div>
 
             <form id="filtersForm" class="card" novalidate>
@@ -474,19 +531,6 @@
             </div>
 
             <div class="card">
-              <h2>Предсказания</h2>
-              <p class="muted">Зрители ставят очки на то, победит ли стример в текущем матче. Работает, когда включены очки. Ведёт предсказание модератор или стример в чате:</p>
-              <ul class="plain">
-                <li><code>!pred start 120</code>: открыть приём ставок на 120 секунд (от 10 до 900; без числа: 120).</li>
-                <li>Зрители: <code>!bet win 100</code> (победа) или <code>!bet lose 100</code> (поражение). <code>all</code> ставит максимум. Одну сторону можно добавлять, сменить сторону нельзя. Общий максимум на человека: «Максимальная ставка» из настроек выше.</li>
-                <li><code>!pred close</code>: закрыть ставки раньше времени. <code>!pred</code> без слов: показать сводку.</li>
-                <li>Итог: <code>!pred win</code> или <code>!pred lose</code> вручную, либо <code>!pred auto</code>: бот сам подведёт итог, когда HenrikDev покажет новую завершённую игру активного аккаунта (включайте во время матча; данные HenrikDev могут появиться с задержкой).</li>
-                <li><code>!pred cancel</code>: отменить, все ставки возвращаются.</li>
-              </ul>
-              <p class="hint">Банк делится между выигравшими пропорционально их ставкам. Если ставки есть только на одну сторону или итог отменён, всем возвращаются очки. Забытое предсказание отменяется через 6 часов. Состояние предсказания в кабинете не показывается: оно видно в чате.</p>
-            </div>
-
-            <div class="card">
               <div class="row between">
                 <div>
                   <h2>Таблица лидеров <span id="pointsTotal" class="muted small"></span></h2>
@@ -496,6 +540,35 @@
               <ol id="topList" class="list numbered"></ol>
               <p id="topEmpty" class="empty" hidden>Пока ни у кого нет очков.</p>
               <p class="hint">Обнуление выполняет бот: он должен быть включён и подключён к базе. Это действие нельзя отменить.</p>
+            </div>
+          </div>
+
+          <!-- Предсказания Twitch -->
+          <div id="panel-pred" class="panel" data-panel="pred" hidden>
+            <div class="card">
+              <h2>Предсказания Twitch</h2>
+              <p class="muted">Бот запускает на стриме обычное предсказание Twitch: зрители ставят баллы канала. Итог выбирает модератор или стример командой в чате, либо бот сам по окончании матча (по данным HenrikDev).</p>
+              <p><strong>Статус:</strong> <span id="predStatus">загрузка…</span></p>
+              <p id="predBusy" class="hint" hidden></p>
+              <p id="predError" class="error" hidden></p>
+              <div class="row">
+                <button id="predConnect" class="btn primary" type="button">Подключить предсказания</button>
+                <button id="predDisconnect" class="btn danger" type="button" hidden>Отключить</button>
+              </div>
+              <p id="predOwnerNote" class="hint" hidden>Подключить или отключить предсказания может только владелец канала. Модераторы кабинета видят статус.</p>
+              <p class="hint">Нужно один раз разрешить боту управлять предсказаниями: откроется страница Twitch с запросом права «channel:manage:predictions». Разрешение можно отозвать здесь или в настройках Twitch (Подключения). Работает только на каналах со статусом партнёра или компаньона Twitch.</p>
+            </div>
+
+            <div class="card">
+              <h2>Команды</h2>
+              <p class="muted">Для модераторов и стримера в чате:</p>
+              <ul class="plain">
+                <li><code>!pred start 120 Победим?</code>: запустить предсказание «Победа / Поражение» на 120 секунд (от 30 до 1800; без числа: 120). Название необязательно (до 45 символов).</li>
+                <li><code>!pred lock</code>: закрыть приём ставок раньше времени. <code>!pred</code> без слов: показать состояние.</li>
+                <li>Итог: <code>!pred win</code> или <code>!pred lose</code> вручную, либо <code>!pred auto</code>: бот сам выберет исход, когда HenrikDev покажет новую завершённую игру активного аккаунта (включайте во время матча; данные могут появиться с задержкой).</li>
+                <li><code>!pred cancel</code>: отменить, баллы вернутся зрителям.</li>
+              </ul>
+              <p class="hint">Ставки и выплаты делает сам Twitch. Если предсказание завершить на Twitch вручную, бот это заметит. Забытое предсказание бот отменяет через 6 часов.</p>
             </div>
           </div>
 
@@ -616,5 +689,29 @@
   </main>
 
   <footer class="wrap foot muted small">Настройки сохраняются сразу и применяются ботом без перезапуска.</footer>
+
+  <dialog id="newsDlg" class="sheet" aria-labelledby="newsTitle">
+    <div class="sheet-head">
+      <h2 id="newsTitle">Что нового</h2>
+      <button id="newsClose" class="iconbtn" type="button" aria-label="Закрыть"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div id="newsBody" class="sheet-body"></div>
+  </dialog>
+
+  <button id="assistBtn" class="fab" type="button" aria-haspopup="dialog" aria-controls="assist">
+    <svg class="ico"><use href="#i-bot"/></svg><span>Ассистент</span>
+  </button>
+  <section id="assist" class="assist" role="dialog" aria-label="Ассистент" hidden>
+    <div class="assist-head">
+      <span class="logo"><img src="logo.png" alt="" width="32" height="32"></span>
+      <div><strong>Ассистент</strong><span class="sub">подсказки по кабинету и командам</span></div>
+      <button id="assistClose" class="iconbtn" type="button" aria-label="Закрыть"><svg class="ico"><use href="#i-x"/></svg></button>
+    </div>
+    <div id="assistLog" class="assist-log" aria-live="polite"></div>
+    <form id="assistForm" class="assist-form" autocomplete="off">
+      <input id="assistInput" type="text" maxlength="200" placeholder="Спросите про команды, фильтры, очки…" aria-label="Вопрос ассистенту">
+      <button class="btn primary" type="submit" aria-label="Отправить"><svg class="ico"><use href="#i-send"/></svg></button>
+    </form>
+  </section>
 </body>
 </html>

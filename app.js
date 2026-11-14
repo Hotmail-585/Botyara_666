@@ -9,6 +9,8 @@ import {
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js';
 
 import { config } from './config.js';
+import { CHANGELOG } from './changelog.js';
+import { QUICK, answer as assistAnswer } from './assistant.js';
 import {
   LIMITS, TOKEN_PATTERN,
   validateValorantName, validateTag, validateRegion, validateCommandName,
@@ -18,17 +20,18 @@ import {
   validatePointsSettings, validateShopItem, shopAdd, shopEdit, shopRemove, topOf, purchasesOf, PTS_LIMITS, SHOP_MAX,
   PERM_SHORT, CMD_CD, ALIASES_MAX, validateCmdOptions, parseAliasList,
   FILTER_KINDS, FILTER_NAMES, FILTER_PARAMS, validateFilterSettings,
-  parseTwitchHash, buildTwitchAuthUrl, makeState,
+  parseTwitchHash, buildTwitchAuthUrl, makeState, parseTwitchQuery, buildTwitchCodeUrl, PRED_CODE_PATTERN,
   validateAdminLimit, formatAgo, formatDuration, alertsOf, botOnline, buildAdminRows,
 } from './validation.js';
 
 const $ = (id) => document.getElementById(id);
 const VIEWS = ['loading', 'error', 'login', 'connect', 'linking', 'linkfail', 'nochannel', 'dashboard', 'admin'];
 const STATE_KEY = 'twitch_oauth_state';
+const PRED_STATE_KEY = 'twitch_pred_state';
 const TAB_KEY = 'bot_tab';
 const BASE_TITLE = document.title;
 const PANEL_KEY = 'bot_panel';
-const PANELS = ['overview', 'valorant', 'commands', 'timers', 'filters', 'games', 'points', 'shop', 'mods'];
+const PANELS = ['overview', 'valorant', 'commands', 'timers', 'filters', 'games', 'points', 'pred', 'shop', 'mods'];
 const ADMIN_TICK_MS = 15 * 1000;
 const PERM_HINT = 'Сервер отклонил действие. Проверьте, что в Firebase опубликованы новые правила (database.rules.json) и что ваш ник есть в ADMINS бота.';
 const LIMIT_FIELDS = [
@@ -70,6 +73,10 @@ function freshState() {
     dirtyLimits: false,
     // подключение бота через сайт
     joining: null,             // { id, timer, unsub } пока ждём ответ бота
+    predLink: undefined,       // undefined = не загружено, иначе true/false: подключены ли предсказания Twitch
+    predFor: null,
+    unsubPred: null,
+    predJob: null,             // { id, timer, unsub } пока ждём ответ бота по предсказаниям
     showModHint: false,        // показать подсказку «выдайте боту модератора»
     // модераторы кабинета и переключатель каналов
     active: null,              // ник канала, которым управляем сейчас (свой или тот, куда добавили модератором)
@@ -329,6 +336,7 @@ async function unlinkTwitch() {
 function teardown() {
   if (!S) return;
   endJoin();
+  endPredJob();
   clearTimeout(S.linkTimer);
   try { S.unsubUser?.(); } catch { /* */ }
   try { S.unsubChannel?.(); } catch { /* */ }
@@ -569,11 +577,297 @@ function ensurePointsSub() {
   );
 }
 
+// ---------- Предсказания Twitch ----------
+
+const PRED_WAIT_MS = 25 * 1000;
+const PRED_MESSAGES = {
+  expired: 'Заявка устарела. Нажмите «Подключить предсказания» ещё раз.',
+  busy: 'Бот сейчас занят. Попробуйте через минуту.',
+  noconfig: 'Бот ещё не настроен для предсказаний (в его файле .env нет TWITCH_CLIENT_SECRET). Скажите администратору бота.',
+  notlinked: 'Twitch не привязан к этому входу. Выйдите и привяжите Twitch заново.',
+  blocked: 'Бот недоступен для вашего канала.',
+  denied: 'Twitch не принял разрешение. Попробуйте ещё раз.',
+  wronguser: 'Вы вошли в Twitch под другим аккаунтом. Нужен аккаунт этого канала (в окне Twitch выберите его).',
+  noscope: 'Не дано право управлять предсказаниями. Разрешите его в окне Twitch.',
+  error: 'Боту не удалось подключить предсказания. Попробуйте позже.',
+};
+
+function ensurePredSub() {
+  if (!S || !S.active || S.predFor === S.active) return;
+  try { S.unsubPred?.(); } catch { /* */ }
+  const sid = S.id;
+  const nick = S.active;
+  S.predFor = nick;
+  S.predLink = undefined;
+  S.unsubPred = onValue(
+    ref(db, `predLink/${nick}`),
+    (snap) => {
+      if (!S || S.id !== sid || S.active !== nick) return;
+      const v = snap.val();
+      S.predLink = !!(v && v.on === true);
+      renderPred();
+      if (S.channel) renderSummary(S.channel);
+    },
+    (err) => {
+      console.error(err);
+      if (S && S.id === sid && S.active === nick) { S.predLink = false; renderPred(); }
+    },
+  );
+}
+
+function setPredBusy(text) {
+  const b = $('predBusy');
+  b.textContent = text || '';
+  b.hidden = !text;
+}
+
+function renderPred() {
+  if (!S) return;
+  const own = isOwn();
+  const busy = !!S.predJob;
+  const on = S.predLink === true;
+  $('predStatus').textContent = S.predLink === undefined ? 'загрузка…' : on ? 'подключены: бот может запускать предсказания' : 'не подключены';
+  $('predConnect').hidden = !own || on;
+  $('predDisconnect').hidden = !own || !on;
+  $('predConnect').disabled = busy;
+  $('predDisconnect').disabled = busy;
+  $('predOwnerNote').hidden = own;
+}
+
+function endPredJob() {
+  const j = S?.predJob;
+  if (!j) return;
+  clearTimeout(j.timer);
+  try { j.unsub?.(); } catch { /* */ }
+  S.predJob = null;
+  setPredBusy('');
+  renderPred();
+}
+
+function startPredConnect() {
+  if (!S || !isOwn() || S.predJob) return;
+  const state = makeState(crypto.getRandomValues(new Uint8Array(16)));
+  try { sessionStorage.setItem(PRED_STATE_KEY, state); } catch {
+    try { localStorage.setItem(PRED_STATE_KEY, state); } catch {
+      toast('Браузер блокирует хранение данных сайта, подключение невозможно. Отключите приватный режим или блокировщик.', 'err');
+      return;
+    }
+  }
+  location.href = buildTwitchCodeUrl({ clientId: config.twitchClientId, redirectUri: redirectUri(), state });
+}
+
+// Отправляет боту код от Twitch или просьбу отключиться и ждёт ответ (predAuthRequests -> predAuthResults).
+async function sendPredRequest(payload, okText) {
+  if (!S || S.predJob) return;
+  const sid = S.id;
+  const uid = S.uid;
+  const id = makeState(crypto.getRandomValues(new Uint8Array(12)));
+  const job = { id, timer: null, unsub: null };
+  S.predJob = job;
+  setError('predError', '');
+  setPredBusy('Бот обрабатывает запрос… обычно это несколько секунд.');
+  renderPred();
+
+  job.unsub = onValue(
+    ref(db, `predAuthResults/${uid}`),
+    (snap) => {
+      if (!S || S.id !== sid || S.predJob !== job) return;
+      const v = snap.val();
+      if (!v || v.id !== id) return;
+      endPredJob();
+      if (v.code === 'ok' || v.code === 'disconnected') toast(okText(v.code), 'ok');
+      else setError('predError', PRED_MESSAGES[v.code] || PRED_MESSAGES.error);
+    },
+    (err) => {
+      console.error(err);
+      if (!S || S.id !== sid || S.predJob !== job) return;
+      endPredJob();
+      setError('predError', friendlyError(err, 'Нет доступа к ответу бота. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'));
+    },
+  );
+  job.timer = setTimeout(() => {
+    if (!S || S.id !== sid || S.predJob !== job) return;
+    endPredJob();
+    setError('predError', 'Бот не ответил. Возможно, он сейчас выключен. Попробуйте ещё раз позже.');
+  }, PRED_WAIT_MS);
+
+  try {
+    await set(ref(db, `predAuthRequests/${uid}`), { id, createdAt: serverTimestamp(), ...payload });
+  } catch (e) {
+    console.error(e);
+    if (S && S.id === sid && S.predJob === job) {
+      endPredJob();
+      setError('predError', friendlyError(e, 'Сервер отклонил заявку. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'));
+    }
+  }
+}
+
+function onPredConnectCode(code) {
+  return sendPredRequest({ code, redirect: redirectUri() }, () => 'Предсказания подключены');
+}
+
+function onPredDisconnect() {
+  if (!S || !isOwn() || S.predJob) return;
+  if (!confirm('Отключить предсказания? Активное предсказание будет отменено, баллы вернутся зрителям.')) return;
+  sendPredRequest({ action: 'disconnect' }, () => 'Предсказания отключены');
+}
+
+// Ответ Twitch после запроса права: ?code=...&state=... (или ?error=...). Сразу убираем из адресной строки.
+function consumePredReturn() {
+  if (!/[?&](code|error)=/.test(location.search)) return null;
+  const q = parseTwitchQuery(location.search);
+  let expected = null;
+  try { expected = sessionStorage.getItem(PRED_STATE_KEY); sessionStorage.removeItem(PRED_STATE_KEY); } catch { /* */ }
+  if (!expected) {
+    try { expected = localStorage.getItem(PRED_STATE_KEY); localStorage.removeItem(PRED_STATE_KEY); } catch { /* */ }
+  }
+  if (!expected || q.state !== expected) return null;      // не наш ответ: оставляем адрес как есть
+  history.replaceState(null, '', location.pathname + location.hash);
+  if (q.error) return { code: null, message: 'Разрешение для предсказаний не выдано.' };
+  if (!q.code || !PRED_CODE_PATTERN.test(q.code)) return { code: null, message: 'Twitch вернул неожиданный ответ. Попробуйте ещё раз.' };
+  return { code: q.code, message: null };
+}
+
+// ---------- Тема, «Что нового», ассистент ----------
+
+const THEME_KEY = 'bot_theme';
+const NEWS_KEY = 'bot_news_seen';
+
+function currentTheme() {
+  const t = document.documentElement.getAttribute('data-theme');
+  if (t === 'light' || t === 'dark') return t;
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function applyThemeIcon() {
+  // Показываем то, на что тема переключится: в тёмной теме солнце, в светлой луна
+  $('themeIcon').setAttribute('href', currentTheme() === 'dark' ? '#i-sun' : '#i-moon');
+}
+
+function onThemeToggle() {
+  const next = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  try { localStorage.setItem(THEME_KEY, next); } catch { /* не страшно */ }
+  applyThemeIcon();
+}
+
+function newsSeen() {
+  try { return localStorage.getItem(NEWS_KEY); } catch { return null; }
+}
+
+function renderNews(unseenFrom) {
+  const body = $('newsBody');
+  body.replaceChildren();
+  CHANGELOG.forEach((r, i) => {
+    const head = el('h3', { text: r.title });
+    if (unseenFrom !== null && i < unseenFrom) head.append(el('span', { class: 'tag-new', text: 'новое' }));
+    body.append(el('div', { class: 'rel' }, [
+      el('div', { class: 'when', text: r.date }),
+      head,
+      el('ul', {}, r.items.map((t) => el('li', { text: t.replace(/`/g, '') }))),
+    ]));
+  });
+}
+
+function openNews() {
+  const seen = newsSeen();
+  const idx = seen ? CHANGELOG.findIndex((r) => r.id === seen) : -1;
+  renderNews(seen ? (idx === -1 ? CHANGELOG.length : idx) : CHANGELOG.length);
+  try { localStorage.setItem(NEWS_KEY, CHANGELOG[0].id); } catch { /* не страшно */ }
+  $('newsPip').hidden = true;
+  const dlg = $('newsDlg');
+  if (typeof dlg.showModal === 'function') dlg.showModal(); else dlg.setAttribute('open', '');
+}
+
+function assistCtx() {
+  return { ch: S?.channel || null, predLink: S?.predLink, isOwn: S ? isOwn() : false };
+}
+
+function assistAdd(cls, nodes) {
+  const log = $('assistLog');
+  const m = el('div', { class: 'msg ' + cls }, nodes);
+  log.append(m);
+  log.scrollTop = log.scrollHeight;
+  return m;
+}
+
+function assistChips(list, go) {
+  const box = el('div', { class: 'chips' });
+  for (const g of go || []) {
+    box.append(el('button', { class: 'chip go', type: 'button', text: g.label, onclick: () => {
+      if (S?.channel) { onNavClick(g.panel); if (window.innerWidth <= 520) closeAssistant(); } else toast('Сначала откройте кабинет канала', 'err');
+    } }));
+  }
+  for (const q of list || []) box.append(el('button', { class: 'chip', type: 'button', text: q, onclick: () => assistAsk(q) }));
+  return box;
+}
+
+function assistAsk(text) {
+  const q = String(text || '').trim().slice(0, 200);
+  if (!q) return;
+  assistAdd('me', [document.createTextNode(q)]);
+  const r = assistAnswer(q, assistCtx());
+  const nodes = [el('b', { text: r.title })];
+  for (const line of r.lines) nodes.push(el('p', { text: line }));
+  if ((r.go && r.go.length) || (r.more && r.more.length)) nodes.push(assistChips(r.more, r.go));
+  assistAdd('bot', nodes);
+}
+
+function openAssistant() {
+  $('assist').hidden = false;
+  $('assistBtn').hidden = true;
+  if (!$('assistLog').childElementCount) {
+    assistAdd('bot', [
+      el('b', { text: 'Привет! Я помогу разобраться с кабинетом.' }),
+      el('p', { text: 'Я не нейросеть, а помощник с готовыми подсказками: отвечаю про команды, фильтры, очки, предсказания и могу проверить, что у вас ещё не настроено.' }),
+      assistChips(QUICK, []),
+    ]);
+  }
+  $('assistInput').focus();
+}
+
+function closeAssistant() {
+  $('assist').hidden = true;
+  $('assistBtn').hidden = false;
+  $('assistBtn').focus();
+}
+
+function initExtras() {
+  applyThemeIcon();
+  $('themeBtn').addEventListener('click', onThemeToggle);
+  $('newsPip').hidden = newsSeen() === CHANGELOG[0].id;
+  $('newsBtn').addEventListener('click', openNews);
+  $('newsClose').addEventListener('click', () => $('newsDlg').close());
+  $('newsDlg').addEventListener('click', (e) => { if (e.target === $('newsDlg')) $('newsDlg').close(); });
+  $('assistBtn').addEventListener('click', openAssistant);
+  $('assistClose').addEventListener('click', closeAssistant);
+  $('assistForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = $('assistInput').value;
+    $('assistInput').value = '';
+    assistAsk(v);
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('assist').hidden && !$('newsDlg').open) closeAssistant(); });
+}
+
+// Плитки и заголовок на обзоре
+function renderStats(ch) {
+  $('ovTitle').textContent = S?.active ? `Добро пожаловать, ${S.active}!` : 'Добро пожаловать!';
+  const set2 = (id, text, on) => { const n = $(id); n.textContent = text; n.className = 'v' + (on === true ? ' on' : on === false ? ' off' : ''); };
+  set2('stBot', ch.enabled ? 'Активен' : 'Выключен', ch.enabled);
+  set2('stCmds', String(ch.commands.length));
+  set2('stPred', S.predLink === undefined ? '…' : S.predLink ? 'Подключены' : 'Не подключены', S.predLink === undefined ? null : S.predLink);
+  set2('stPts', ch.points.on ? 'Включены' : 'Выключены', ch.points.on);
+}
+
 function stopExtras() {
   if (!S) return;
   try { S.unsubPurchases?.(); } catch { /* */ }
   try { S.unsubPoints?.(); } catch { /* */ }
-  S.unsubPurchases = S.unsubPoints = null;
+  try { S.unsubPred?.(); } catch { /* */ }
+  S.unsubPurchases = S.unsubPoints = S.unsubPred = null;
+  S.predLink = undefined;
+  S.predFor = null;
   S.purchases = [];
   S.pointsFor = null;
   S.pointsData = undefined;
@@ -901,6 +1195,15 @@ function renderBotState() {
     kvRow(grid, 'Модерация чата (фильтры)', 'нет данных (обновите bot.js и перезапустите бота)');
   }
 
+  const pr = st.predictions;
+  if (pr && typeof pr === 'object') {
+    kvRow(grid, 'Предсказания Twitch', pr.configured
+      ? `доступны · подключено каналов: ${pr.linked ?? 0} · идут сейчас: ${pr.active ?? 0}`
+      : 'не настроены: в .env бота нет TWITCH_CLIENT_SECRET');
+  } else {
+    kvRow(grid, 'Предсказания Twitch', 'нет данных (обновите bot.js и перезапустите бота)');
+  }
+
   const c = st.channels || {};
   const lim = st.limits || {};
   kvRow(grid, 'Каналы', `${c.total ?? 0} из ${lim.maxChannels ?? '?'} · включено ${c.enabled ?? 0} · заблокировано ${c.blocked ?? 0}`);
@@ -1163,6 +1466,8 @@ function renderDashboard() {
   renderPoints(ch);
   renderShop(ch);
   renderOrders();
+  ensurePredSub();
+  renderPred();
   renderSummary(ch);
   showPanel(S.panel);
 }
@@ -1177,7 +1482,9 @@ function showPanel(name) {
     if (b.dataset.nav === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
   $('sideNav').querySelector('[data-nav="mods"]').hidden = !isOwn();
-  if (name === 'points') { ensurePointsSub(); renderLeaders(); }
+  $('navGroupManage').hidden = !isOwn();
+  if (name === 'points' || name === 'overview') { ensurePointsSub(); renderLeaders(); }
+  if (name === 'pred') { ensurePredSub(); renderPred(); }
 }
 
 function onNavClick(name) {
@@ -1188,6 +1495,7 @@ function onNavClick(name) {
 }
 
 function renderSummary(ch) {
+  renderStats(ch);
   const g = $('summary');
   g.replaceChildren();
   const link = (label, panel) => el('button', { class: 'btn small ghost', type: 'button', text: label, onclick: () => onNavClick(panel) });
@@ -1201,6 +1509,7 @@ function renderSummary(ch) {
   row('Фильтры чата', ch.filters.on ? `включены, действующих фильтров: ${activeFilters} из ${FILTER_KINDS.length}` : 'выключены', 'filters');
   row('Мини-игры', ch.games ? `включены${ch.roulette ? ', рулетка включена' : ''}` : 'выключены', 'games');
   row('Очки', ch.points.on ? 'включены' : 'выключены', 'points');
+  row('Предсказания Twitch', S.predLink === undefined ? 'загрузка…' : S.predLink ? 'подключены' : 'не подключены', 'pred');
   row('Магазин', `${ch.shop.length} наград, невыполненных заказов: ${S.purchases.length}`, 'shop');
 }
 
@@ -1331,7 +1640,7 @@ function renderLeaders() {
   if (!S) return;
   const list = $('topList');
   list.replaceChildren();
-  if (S.pointsData === undefined) { $('topEmpty').textContent = 'Загрузка…'; $('topEmpty').hidden = false; $('pointsTotal').textContent = ''; return; }
+  if (S.pointsData === undefined) { $('topEmpty').textContent = 'Загрузка…'; $('topEmpty').hidden = false; $('pointsTotal').textContent = ''; $('ovTop').replaceChildren(); $('ovTopEmpty').textContent = 'Загрузка…'; $('ovTopEmpty').hidden = false; $('ovTopMore').hidden = true; return; }
   const { total, top } = topOf(S.pointsData, 10);
   for (const r of top) {
     list.append(el('li', { class: 'item' }, [
@@ -1342,6 +1651,22 @@ function renderLeaders() {
   $('pointsTotal').textContent = total ? `(зрителей с очками: ${total})` : '';
   $('topEmpty').textContent = 'Пока ни у кого нет очков.';
   $('topEmpty').hidden = total > 0;
+  renderOverviewTop(top.slice(0, 5), total);
+}
+
+function renderOverviewTop(rows, total) {
+  const ol = $('ovTop');
+  ol.replaceChildren();
+  rows.forEach((r, i) => {
+    ol.append(el('li', { class: 'toprow' }, [
+      el('span', { class: `rankno r${i + 1}`, text: `#${i + 1}` }),
+      el('span', { class: 'topname', text: r.nick }),
+      el('span', { class: 'topval', text: `${r.b} очк.` }),
+    ]));
+  });
+  $('ovTopEmpty').textContent = 'Пока ни у кого нет очков.';
+  $('ovTopEmpty').hidden = total > 0;
+  $('ovTopMore').hidden = total === 0;
 }
 
 async function onPointsToggle() {
@@ -2034,6 +2359,8 @@ function fillBotName() {
 // ---------- Запуск ----------
 
 function bindUi() {
+  initExtras();
+  $('ovTopMore').addEventListener('click', () => onNavClick('points'));
   buildFilterForm();
 
   $('googleBtn').addEventListener('click', startGoogleLogin);
@@ -2071,6 +2398,8 @@ function bindUi() {
   $('pointsForm').addEventListener('submit', onPointsSubmit);
   for (const id of ['ptsPerChat', 'ptsEveryMin', 'ptsDaily', 'ptsMaxBet']) $(id).addEventListener('input', () => { if (S) S.dirtyPoints = true; });
   $('pointsReset').addEventListener('click', onPointsReset);
+  $('predConnect').addEventListener('click', startPredConnect);
+  $('predDisconnect').addEventListener('click', onPredDisconnect);
   $('rouletteToggle').addEventListener('change', onRouletteChange);
   $('shopForm').addEventListener('submit', onShopSubmit);
   $('shopCancel').addEventListener('click', resetShopForm);
@@ -2110,6 +2439,8 @@ async function main() {
   if (problem) { showFatal(problem); return; }
 
   const ret = consumeTwitchReturn(); // сразу убирает токен из адресной строки
+  const predRet = consumePredReturn(); // и код предсказаний (после возврата с Twitch)
+  if (predRet) { try { localStorage.setItem(PANEL_KEY, 'pred'); } catch { /* */ } }
 
   try {
     const app = initializeApp(config.firebase);
@@ -2123,6 +2454,11 @@ async function main() {
 
   await startSession(ret.token);
   if (ret.message) toast(ret.message, 'err');
+  if (predRet) {
+    if (predRet.message) toast(predRet.message, 'err');
+    else if (S?.uid) onPredConnectCode(predRet.code);
+    else toast('Сессия не найдена. Войдите и подключите предсказания ещё раз.', 'err');
+  }
 }
 
 main();

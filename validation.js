@@ -22,7 +22,7 @@ export const RESERVED_COMMANDS = [
   '!points', '!очки', '!top', '!daily', '!give', '!gift', '!shop', '!buy', '!accept', '!принять', '!pts',
   '!команды', '!commands', '!status', '!help', '!list',
   '!addcom', '!editcom', '!delcom', '!addtimer', '!deltimer', '!timer', '!timers',
-  '!bet', '!pred', '!permit', '!filters',
+  '!pred', '!permit', '!filters',
 ];
 export const MAX_ACCOUNTS = 5;   // основной + до 4 дополнительных
 
@@ -537,6 +537,33 @@ export function buildTwitchAuthUrl({ clientId, redirectUri, state }) {
     redirect_uri: redirectUri,
     response_type: 'token',
     state,
+  });
+  return `https://id.twitch.tv/oauth2/authorize?${q.toString()}`;
+}
+
+// Предсказания Twitch: право и обмен одноразового кода (authorization code flow, секрет знает только бот).
+export const PRED_SCOPE = 'channel:manage:predictions';
+export const PRED_CODE_PATTERN = /^[A-Za-z0-9]{10,60}$/;
+
+export function parseTwitchQuery(search) {
+  const params = new URLSearchParams(String(search || '').replace(/^\?/, ''));
+  return {
+    code: params.get('code'),
+    state: params.get('state'),
+    scope: params.get('scope'),
+    error: params.get('error'),
+    errorDescription: params.get('error_description'),
+  };
+}
+
+export function buildTwitchCodeUrl({ clientId, redirectUri, state }) {
+  const q = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: PRED_SCOPE,
+    state,
+    force_verify: 'true',
   });
   return `https://id.twitch.tv/oauth2/authorize?${q.toString()}`;
 }

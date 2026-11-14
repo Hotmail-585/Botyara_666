@@ -1,21 +1,20 @@
-/* Вкладка «Админ». Использует цвета и кнопки из style.css. */
+/* Кабинет и вкладка «Админ». Использует цвета и кнопки из style.css. */
 
-main.wrap.wide { max-width: 980px; }
+main.wrap.wide { max-width: 1000px; }
 
-/* Вкладки */
+/* Переключатель Кабинет / Админ */
 .tabs {
-  display: flex; gap: 6px; margin: 0 0 16px;
-  border-bottom: 1px solid var(--border);
+  display: inline-flex; gap: 4px; margin: 0 0 16px; padding: 4px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
 }
 .tab {
-  appearance: none; background: transparent; border: 0;
-  border-bottom: 3px solid transparent; margin-bottom: -1px;
+  appearance: none; background: transparent; border: 0; border-radius: 9px;
   color: var(--muted); font: inherit; font-weight: 600;
-  padding: 10px 14px; cursor: pointer;
+  padding: 8px 16px; cursor: pointer;
 }
 .tab:hover { color: var(--text); }
-.tab[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
-.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 6px; }
+.tab[aria-selected="true"] { color: #fff; background: var(--accent); }
+.tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Состояние бота */
 .state { display: flex; align-items: center; gap: 8px; font-weight: 700; margin: 8px 0 0; }
@@ -68,7 +67,7 @@ main.wrap.wide { max-width: 980px; }
 .field.tall > span { min-height: 2.6em; align-items: flex-start; }
 
 /* Подсказка после подключения бота */
-.hint-card { border-color: var(--ok); }
+.hint-card { border-color: var(--accent); background: linear-gradient(0deg, var(--accent-soft), var(--accent-soft)), var(--panel); }
 
 /* Переключатель каналов, предпросмотр, модераторы */
 .chanbar { margin-bottom: 16px; }
@@ -76,32 +75,38 @@ main.wrap.wide { max-width: 980px; }
 .field.grow { flex: 1 1 220px; }
 .preview {
   margin: 4px 0 12px; padding: 10px 12px; border: 1px dashed var(--border);
-  border-radius: 10px; background: var(--panel);
+  border-radius: 12px; background: var(--panel);
 }
 .chat-line { margin: 2px 0; overflow-wrap: anywhere; }
 .chat-line .who { font-weight: 700; margin-right: 6px; }
-.chat-line.bot .who { color: var(--accent); }
+.chat-line.bot .who { color: var(--accent-ink); }
 .chat-line.viewer .who { color: var(--muted); }
 .item .pill { margin-left: 8px; }
 .item-name .pill { margin-left: 8px; }
 
 /* Кабинет: меню слева и разделы */
-main.wrap.wide-cab { max-width: 1080px; }
-.cab { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; align-items: start; }
+main.wrap.wide-cab { max-width: 1180px; }
+.cab { display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: 22px; align-items: start; }
 .side {
-  position: sticky; top: 72px; display: flex; flex-direction: column; gap: 4px;
-  padding: 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  position: sticky; top: 76px; display: flex; flex-direction: column; gap: 2px;
+  padding: 10px; background: var(--bg-side); border: 1px solid var(--border); border-radius: 16px;
+  max-height: calc(100vh - 92px); overflow-y: auto;
 }
+.navgroup {
+  margin: 12px 10px 4px; font-size: .72rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted);
+}
+.navgroup:first-child { margin-top: 4px; }
 .navbtn {
-  appearance: none; background: transparent; border: 0; border-radius: 8px; width: 100%;
-  display: flex; align-items: center; gap: 10px; text-align: left;
-  color: var(--muted); font: inherit; font-weight: 600; padding: 10px 12px; cursor: pointer;
+  appearance: none; background: transparent; border: 0; border-radius: 10px; width: 100%;
+  display: flex; align-items: center; gap: 12px; text-align: left;
+  color: var(--muted); font: inherit; font-weight: 600; padding: 9px 12px; cursor: pointer;
 }
 .navbtn:hover { background: var(--panel-2); color: var(--text); }
-.navbtn[aria-current="page"] { background: var(--panel-2); color: var(--text); box-shadow: inset 3px 0 0 var(--accent); }
+.navbtn[aria-current="page"] { background: var(--accent-soft); color: var(--accent-ink); }
 .navbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.navbtn[hidden] { display: none; }
-.navbtn .ico { width: 1.4em; text-align: center; flex: none; }
+.navbtn[hidden], .navgroup[hidden] { display: none; }
+.navbtn .ico { width: 18px; height: 18px; }
 .badge {
   margin-left: auto; min-width: 1.5em; padding: 2px 7px; border-radius: 999px; text-align: center;
   background: var(--accent); color: #fff; font-size: .75rem; font-weight: 700; line-height: 1.3;
@@ -109,14 +114,37 @@ main.wrap.wide-cab { max-width: 1080px; }
 .content { min-width: 0; }
 .panel { display: grid; gap: 16px; }
 .panel[hidden] { display: none; }
-@media (max-width: 760px) {
+.pagehead h1 { margin: 0; font-size: 1.5rem; line-height: 1.25; }
+.pagehead p { margin: 4px 0 0; color: var(--muted); }
+
+/* Плитки на обзоре */
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.stat { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; }
+.stat .k { color: var(--muted); font-size: .8rem; }
+.stat .v { font-size: 1.5rem; font-weight: 800; line-height: 1.3; margin-top: 2px; }
+.stat .v.on { color: var(--ok); }
+.stat .v.off { color: var(--muted); }
+
+@media (max-width: 860px) {
   .cab { grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .side {
-    position: static; flex-direction: row; overflow-x: auto; gap: 6px; padding: 6px;
-    -webkit-overflow-scrolling: touch; scrollbar-width: thin;
+    position: static; flex-direction: row; overflow-x: auto; overflow-y: hidden; gap: 6px; padding: 6px;
+    max-height: none; -webkit-overflow-scrolling: touch; scrollbar-width: thin;
   }
+  .navgroup { display: none; }
   .navbtn { width: auto; flex: none; white-space: nowrap; padding: 8px 12px; }
-  .navbtn[aria-current="page"] { box-shadow: inset 0 -3px 0 var(--accent); }
 }
 .summary-link { color: inherit; }
-body.cab-wide .topbar .wrap, body.cab-wide .foot { max-width: 1080px; }
+body.cab-wide .topbar .wrap, body.cab-wide .foot { max-width: 1180px; }
+
+/* Телефон */
+@media (max-width: 700px) {
+  .topbar-in { flex-wrap: wrap; padding-top: 8px; padding-bottom: 8px; row-gap: 6px; }
+  .iconbtn .lbl { display: none; }
+  .pip { left: 24px; }
+  .userbox { width: 100%; justify-content: flex-end; }
+  .usernick { margin-right: auto; max-width: 50vw; }
+  .stat .v { font-size: 1.1rem; overflow-wrap: anywhere; }
+  .stats { grid-template-columns: 1fr 1fr; }
+  .card { padding: 16px; }
+}
