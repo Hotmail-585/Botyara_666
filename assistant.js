@@ -116,6 +116,7 @@ export const TOPICS = [
   T('valorant', ['valorant', 'валорант', 'ранг', 'rank', 'peak', 'lastgame', 'today', 'аккаунт', 'hdev', 'henrik'],
     'Valorant',
     [
+      'Аккаунт Valorant необязателен: бота можно подключить без него и добавить позже. Пока его нет, !rank и похожие команды отвечают, что аккаунт не указан.',
       'Вкладка «Valorant»: основной аккаунт (ник, тег, регион) и до 4 дополнительных. Команды !rank, !peak, !lastgame и !today показывают активный аккаунт. Переключить его можно на вкладке или в чате командой !acc 2 (модератор).',
       'Сайт проверяет только формат. Если аккаунта не существует, !rank ответит «Аккаунт не найден».',
     ],
@@ -214,7 +215,7 @@ export function checkSetup(ctx) {
   const items = [];
   const add = (ok, good, bad, panel, label) => items.push({ ok, text: ok ? good : bad, panel: ok ? null : panel, label });
   add(ch.enabled, 'Бот на канале включён.', 'Бот на канале выключен: он не отвечает в чате. Включите переключатель на обзоре.', 'overview', 'Обзор');
-  add(!!(ch.name && ch.tag), `Аккаунт Valorant задан (${ch.name}#${ch.tag}).`, 'Не задан аккаунт Valorant: !rank не будет работать.', 'valorant', 'Valorant');
+  add(!!(ch.name && ch.tag), `Аккаунт Valorant задан (${ch.name}#${ch.tag}).`, 'Аккаунт Valorant не указан (необязательно): !rank, !peak, !lastgame и !today не заработают, пока его нет.', 'valorant', 'Valorant');
   add(ch.commands.length > 0, `Свои команды есть (${ch.commands.length}).`, 'Нет своих команд. Добавьте хотя бы !discord или !social.', 'commands', 'Команды');
   add(ch.timers.length > 0 && !ch.timerOff, `Авто-сообщения работают (${ch.timers.length}).`, ch.timers.length ? 'Авто-сообщения добавлены, но выключены.' : 'Нет авто-сообщений (необязательно).', 'timers', 'Авто-сообщения');
   add(ch.filters.on, 'Фильтры чата включены.', 'Фильтры чата выключены (необязательно, но помогают от спама и ссылок).', 'filters', 'Фильтры');

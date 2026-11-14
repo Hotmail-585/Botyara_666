@@ -137,7 +137,7 @@
     <section id="view-connect" class="view card" hidden>
       <h2>Привяжите свой Twitch</h2>
       <p class="muted">Вы вошли через Google. Осталось один раз подтвердить свой Twitch-канал: так бот узнает, чей это кабинет. После этого на любом устройстве хватит входа через Google.</p>
-      <p class="muted small">Перед этим бот должен быть подключён к вашему каналу: напишите в чате бота<span class="botname"></span> <code>!join Ник#Тег eu</code>.</p>
+      <p class="muted small">Перед этим бот должен быть подключён к вашему каналу: напишите в чате бота<span class="botname"></span> <code>!join</code> (аккаунт Valorant по желанию: <code>!join Ник#Тег eu</code>).</p>
       <button id="connectBtn" class="btn twitch" type="button">Привязать Twitch</button>
     </section>
 
@@ -159,7 +159,7 @@
     <section id="view-nochannel" class="view" hidden>
       <form id="joinForm" class="card" novalidate>
         <h2>Подключить бота к вашему каналу</h2>
-        <p class="muted">Укажите аккаунт Valorant, ранг которого бот будет показывать по команде <code>!rank</code>. Бот подключится к вашему Twitch-каналу сам.</p>
+        <p class="muted">Бот подключится к вашему Twitch-каналу сам. Аккаунт Valorant, ранг которого бот показывает по команде <code>!rank</code>, указывать необязательно: оставьте ник и тег пустыми, а добавить его можно позже во вкладке «Valorant».</p>
         <div class="grid3">
           <label class="field">
             <span>Ник</span>
@@ -182,7 +182,7 @@
         <p id="jError" class="error" hidden></p>
         <p id="jStatus" class="hint" hidden></p>
         <button id="jSave" class="btn primary" type="submit">Подключить бота</button>
-        <p class="hint">Можно и по-старому: написать в чате бота<span class="botname"></span> <code>!join Ник#Тег eu</code>. Эта страница обновится сама.</p>
+        <p class="hint">Можно и по-старому: написать в чате бота<span class="botname"></span> <code>!join</code> (или <code>!join Ник#Тег eu</code>, если нужен Valorant). Эта страница обновится сама.</p>
       </form>
     </section>
 

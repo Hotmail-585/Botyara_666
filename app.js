@@ -1230,11 +1230,15 @@ function renderModHint() {
 async function onJoinSubmit(ev) {
   ev.preventDefault();
   if (!S || S.joining) return;
+  // Аккаунт Valorant необязателен: пустые ник и тег = подключить бота без него (добавить можно позже)
+  const withValorant = $('jName').value.trim() !== '' || $('jTag').value.trim() !== '';
   const n = validateValorantName($('jName').value);
   const t = validateTag($('jTag').value);
   const r = validateRegion($('jRegion').value);
-  const bad = [n, t, r].find((x) => !x.ok);
-  if (bad) { setError('jError', bad.error); return; }
+  if (withValorant) {
+    const bad = [n, t, r].find((x) => !x.ok);
+    if (bad) { setError('jError', bad.error + ' Или оставьте ник и тег пустыми, чтобы подключить бота без Valorant.'); return; }
+  }
   setError('jError', '');
 
   const sid = S.id;
@@ -1276,7 +1280,7 @@ async function onJoinSubmit(ev) {
 
   try {
     await set(ref(db, `joinRequests/${uid}`), {
-      id, name: n.value, tag: t.value, region: r.value, createdAt: serverTimestamp(),
+      id, ...(withValorant ? { name: n.value, tag: t.value, region: r.value } : {}), createdAt: serverTimestamp(),
     });
   } catch (e) {
     console.error(e);
@@ -1820,7 +1824,9 @@ function renderSummary(ch) {
   const row = (label, value, panel) => g.append(el('dt', { text: label }), el('dd', {}, [document.createTextNode(value + ' '), panel ? link('Открыть', panel) : null]));
   const act = activeNumber(ch);
   const acc = allAccounts(ch)[act - 1];
-  row('Аккаунт Valorant', `${acc.name}#${acc.tag} (${acc.region})${allAccounts(ch).length > 1 ? `, активный №${act} из ${allAccounts(ch).length}` : ''}`, 'valorant');
+  row('Аккаунт Valorant', ch.name && ch.tag
+    ? `${acc.name}#${acc.tag} (${acc.region})${allAccounts(ch).length > 1 ? `, активный №${act} из ${allAccounts(ch).length}` : ''}`
+    : 'не указан (необязательно)', 'valorant');
   row('Свои команды', String(ch.commands.length), 'commands');
   row('Авто-сообщения', `${ch.timers.length}${ch.timers.length ? (ch.timerOff ? ', выключены' : ', включены') : ''}`, 'timers');
   const activeFilters = FILTER_KINDS.filter((k) => ch.filters[k].on).length;
@@ -2239,7 +2245,13 @@ function renderAccounts(ch) {
   const act = activeNumber(ch);
   const list = $('accList');
   list.replaceChildren();
-  all.forEach((a, i) => {
+  const noMain = !(ch.name && ch.tag);
+  if (noMain) {
+    list.append(el('li', { class: 'item' }, [el('div', { class: 'item-main' }, [
+      el('div', { class: 'item-name', text: 'Аккаунт Valorant не указан. Он необязателен: укажите его выше, если хотите, чтобы работали !rank, !peak, !lastgame и !today.' }),
+    ])]));
+  }
+  (noMain ? [] : all).forEach((a, i) => {
     const n = i + 1;
     const actions = [];
     if (act !== n) {
@@ -2259,7 +2271,7 @@ function renderAccounts(ch) {
   });
   const full = all.length >= MAX_ACCOUNTS;
   $('accFull').hidden = !full;
-  for (const id of ['aName', 'aTag', 'aRegion', 'accAdd']) $(id).disabled = full;
+  for (const id of ['aName', 'aTag', 'aRegion', 'accAdd']) $(id).disabled = full || noMain;
 }
 
 async function setActiveAccount(n) {
@@ -2269,6 +2281,7 @@ async function setActiveAccount(n) {
 async function onAccountAdd(ev) {
   ev.preventDefault();
   const ch = S.channel;
+  if (!(ch.name && ch.tag)) { setError('accError', 'Сначала укажите основной аккаунт Valorant выше.'); return; }
   const n = validateValorantName($('aName').value);
   const t = validateTag($('aTag').value);
   const r = validateRegion($('aRegion').value);
