@@ -8,7 +8,7 @@ firebase: {
     authDomain: 'botyara-f4b18.firebaseapp.com',
     databaseURL: 'https://botyara-f4b18-default-rtdb.firebaseio.com',
     projectId: 'botyara-f4b18',
-    appId: '1:123064665877:web:3e4592412ed36ad4260b1c',
+    appId: '1:123064665877:web:8b5abb323c5578fb260b1c',
   },
 
   // Twitch Developer Console → ваше приложение → Client ID
