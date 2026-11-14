@@ -20,7 +20,7 @@ import {
   validatePointsSettings, validateShopItem, shopAdd, shopEdit, shopRemove, topOf, purchasesOf, PTS_LIMITS, SHOP_MAX,
   PERM_SHORT, CMD_CD, ALIASES_MAX, validateCmdOptions, parseAliasList,
   FILTER_KINDS, FILTER_NAMES, FILTER_PARAMS, validateFilterSettings,
-  parseTwitchHash, buildTwitchAuthUrl, makeState, parseTwitchQuery, buildTwitchCodeUrl, PRED_CODE_PATTERN,
+  parseTwitchHash, buildTwitchAuthUrl, makeState, parseTwitchQuery, buildTwitchCodeUrl, PRED_CODE_PATTERN, topChatters, activitySeries,
   validateAdminLimit, formatAgo, formatDuration, alertsOf, botOnline, buildAdminRows,
 } from './validation.js';
 
@@ -31,7 +31,7 @@ const PRED_STATE_KEY = 'twitch_pred_state';
 const TAB_KEY = 'bot_tab';
 const BASE_TITLE = document.title;
 const PANEL_KEY = 'bot_panel';
-const PANELS = ['overview', 'valorant', 'commands', 'timers', 'filters', 'games', 'points', 'pred', 'shop', 'mods'];
+const PANELS = ['overview', 'stats', 'valorant', 'commands', 'timers', 'filters', 'games', 'points', 'pred', 'shop', 'mods'];
 const ADMIN_TICK_MS = 15 * 1000;
 const PERM_HINT = 'Сервер отклонил действие. Проверьте, что в Firebase опубликованы новые правила (database.rules.json) и что ваш ник есть в ADMINS бота.';
 const LIMIT_FIELDS = [
@@ -76,6 +76,10 @@ function freshState() {
     predLink: undefined,       // undefined = не загружено, иначе true/false: подключены ли предсказания Twitch
     predFor: null,
     unsubPred: null,
+    statsData: undefined,      // undefined = не загружено, иначе { users, hours } из stats/{канал}
+    statsFor: null,
+    unsubStats: null,
+    statsMode: '24h',
     predJob: null,             // { id, timer, unsub } пока ждём ответ бота по предсказаниям
     showModHint: false,        // показать подсказку «выдайте боту модератора»
     // модераторы кабинета и переключатель каналов
@@ -306,6 +310,7 @@ async function startSession(pendingToken = null) {
   S.email = user.email || '';
   $('userNick').textContent = S.email;
   subscribeUser();
+  subscribeSupport();
 }
 
 async function startGoogleLogin() {
@@ -342,6 +347,7 @@ function teardown() {
   try { S.unsubChannel?.(); } catch { /* */ }
   stopAccess();
   stopExtras();
+  stopSupport();
   S.unsubUser = S.unsubChannel = null;
   stopAdmin();
   S.id = null;
@@ -794,6 +800,7 @@ function assistAdd(cls, nodes) {
 function assistChips(list, go) {
   const box = el('div', { class: 'chips' });
   for (const g of go || []) {
+    if (g.action === 'support') { box.append(el('button', { class: 'chip go', type: 'button', text: g.label, onclick: () => setAssistMode('support') })); continue; }
     box.append(el('button', { class: 'chip go', type: 'button', text: g.label, onclick: () => {
       if (S?.channel) { onNavClick(g.panel); if (window.innerWidth <= 520) closeAssistant(); } else toast('Сначала откройте кабинет канала', 'err');
     } }));
@@ -813,23 +820,172 @@ function assistAsk(text) {
   assistAdd('bot', nodes);
 }
 
+function openAssistantIntro() {
+  assistAdd('bot', [
+    el('b', { text: 'Привет! Я помогу разобраться с кабинетом.' }),
+    el('p', { text: 'Я не нейросеть, а помощник с готовыми подсказками: отвечаю про команды, фильтры, очки, предсказания и могу проверить, что у вас ещё не настроено. Если ответа нет, можно написать в поддержку.' }),
+    assistChips(QUICK, [{ label: 'Написать в поддержку', action: 'support' }]),
+  ]);
+}
+
 function openAssistant() {
   $('assist').hidden = false;
   $('assistBtn').hidden = true;
-  if (!$('assistLog').childElementCount) {
-    assistAdd('bot', [
-      el('b', { text: 'Привет! Я помогу разобраться с кабинетом.' }),
-      el('p', { text: 'Я не нейросеть, а помощник с готовыми подсказками: отвечаю про команды, фильтры, очки, предсказания и могу проверить, что у вас ещё не настроено.' }),
-      assistChips(QUICK, []),
-    ]);
-  }
+  if (assistMode === 'support') { renderSupport(); updateSupportPip(); $('assistInput').focus(); return; }
+  if (!$('assistLog').childElementCount) openAssistantIntro();
   $('assistInput').focus();
 }
 
 function closeAssistant() {
   $('assist').hidden = true;
+  updateSupportPip();
   $('assistBtn').hidden = false;
   $('assistBtn').focus();
+}
+
+// ---------- Поддержка (кабинет -> Telegram владельца -> ответ в кабинет) ----------
+
+const SUPPORT_SEEN_KEY = 'bot_support_seen';
+const SUPPORT_TEXT_MAX = 1000;
+let assistMode = 'help';
+let supportTimer = null;
+
+function growInput() {
+  const t = $('assistInput');
+  t.style.height = 'auto';
+  t.style.height = Math.min(t.scrollHeight, 120) + 'px';
+}
+
+function supportSeen() {
+  try { return Number(localStorage.getItem(SUPPORT_SEEN_KEY)) || 0; } catch { return 0; }
+}
+
+function supportLatest() {
+  let m = 0;
+  for (const x of S?.supportMsgs || []) if (x.from !== 'user' && x.at > m) m = x.at;
+  return m;
+}
+
+function supportUnread() {
+  const seen = supportSeen();
+  return (S?.supportMsgs || []).filter((x) => x.from === 'staff' && x.at > seen).length;
+}
+
+function markSupportSeen() {
+  const m = supportLatest();
+  if (!m) return;
+  try { localStorage.setItem(SUPPORT_SEEN_KEY, String(m)); } catch { /* не страшно */ }
+}
+
+function updateSupportPip() {
+  const open = !$('assist').hidden && assistMode === 'support';
+  if (open) markSupportSeen();
+  $('assistPip').hidden = open || supportUnread() === 0;
+}
+
+function subscribeSupport() {
+  if (!S || !S.uid) return;
+  const sid = S.id;
+  const uid = S.uid;
+  S.supportMsgs = [];
+  S.supportPending = null;
+  S.unsubSupport = onValue(ref(db, `support/${uid}`), (snap) => {
+    if (!S || S.id !== sid) return;
+    const v = snap.val() || {};
+    S.supportMsgs = Object.keys(v)
+      .map((k) => ({ id: k, from: v[k].from, text: String(v[k].text || ''), at: Number(v[k].at) || 0, delivered: v[k].delivered === true }))
+      .filter((x) => x.from === 'user' || x.from === 'staff' || x.from === 'sys')
+      .sort((a, b) => a.at - b.at);
+    renderSupport();
+    updateSupportPip();
+  }, (err) => { console.error(err); });
+  S.unsubSupportInbox = onValue(ref(db, `supportInbox/${uid}`), (snap) => {
+    if (!S || S.id !== sid) return;
+    const v = snap.val();
+    S.supportPending = v && typeof v.text === 'string' ? { id: v.id, text: v.text, since: Date.now() } : null;
+    clearTimeout(supportTimer);
+    if (S.supportPending) supportTimer = setTimeout(renderSupport, 15000);
+    renderSupport();
+  }, (err) => { console.error(err); });
+}
+
+function stopSupport() {
+  if (!S) return;
+  try { S.unsubSupport?.(); } catch { /* */ }
+  try { S.unsubSupportInbox?.(); } catch { /* */ }
+  S.unsubSupport = S.unsubSupportInbox = null;
+  S.supportMsgs = [];
+  S.supportPending = null;
+  clearTimeout(supportTimer);
+  updateSupportPip();
+}
+
+function fmtWhen(ms) {
+  if (!ms) return '';
+  const d = new Date(ms);
+  const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${hm}`;
+}
+
+function renderSupport() {
+  if (assistMode !== 'support') return;
+  const log = $('assistLog');
+  log.textContent = '';
+  const add = (cls, nodes) => log.append(el('div', { class: 'msg ' + cls }, nodes));
+  add('bot', [
+    el('b', { text: 'Поддержка' }),
+    el('p', { text: 'Опишите проблему или вопрос. Сообщение придёт владельцу бота, а ответ появится здесь. Если вы закроете окно, на кнопке ассистента загорится красная точка.' }),
+  ]);
+  if (!S || !S.uid) {
+    add('sys', [document.createTextNode('Чтобы написать в поддержку, войдите в кабинет через Google.')]);
+    return;
+  }
+  for (const m of S.supportMsgs || []) {
+    const meta = el('span', { class: 'meta', text: [fmtWhen(m.at), m.from === 'user' && m.delivered ? 'доставлено' : ''].filter(Boolean).join(' · ') });
+    if (m.from === 'sys') add('sys', [document.createTextNode(m.text)]);
+    else if (m.from === 'user') add('me', [el('span', { class: 'txt', text: m.text }), meta]);
+    else add('bot', [el('b', { text: 'Поддержка' }), el('p', { text: m.text }), meta]);
+  }
+  const p = S.supportPending;
+  if (p && !(S.supportMsgs || []).some((x) => x.id === p.id)) {
+    const late = Date.now() - p.since > 15000;
+    add('me wait', [el('span', { class: 'txt', text: p.text }), el('span', { class: 'meta', text: late ? 'в очереди: бот сейчас не отвечает, сообщение отправится, когда он включится' : 'отправляется…' })]);
+  }
+  log.scrollTop = log.scrollHeight;
+}
+
+function setAssistMode(mode) {
+  assistMode = mode === 'support' ? 'support' : 'help';
+  const sup = assistMode === 'support';
+  $('assistTitle').textContent = sup ? 'Поддержка' : 'Ассистент';
+  $('assistSub').textContent = sup ? 'сообщение владельцу бота' : 'подсказки по кабинету и командам';
+  $('assistSwitch').textContent = sup ? 'К ассистенту' : 'Написать в поддержку';
+  const inp = $('assistInput');
+  inp.maxLength = sup ? SUPPORT_TEXT_MAX : 200;
+  inp.placeholder = sup ? 'Опишите проблему…' : 'Спросите про команды, фильтры, очки…';
+  inp.setAttribute('aria-label', sup ? 'Сообщение в поддержку' : 'Вопрос ассистенту');
+  if (sup) { renderSupport(); } else { $('assistLog').textContent = ''; openAssistantIntro(); }
+  updateSupportPip();
+  inp.focus();
+}
+
+async function sendSupport(raw) {
+  const text = String(raw || '').replace(/\r\n/g, '\n').trim();
+  if (!text) return;
+  if (!S || !S.uid) { toast('Сначала войдите в кабинет', 'err'); return; }
+  if (text.length > SUPPORT_TEXT_MAX) { toast(`Слишком длинное сообщение (максимум ${SUPPORT_TEXT_MAX} символов)`, 'err'); return; }
+  if (S.supportPending) { toast('Предыдущее сообщение ещё отправляется', 'err'); return; }
+  const id = makeState(crypto.getRandomValues(new Uint8Array(12)));
+  $('assistInput').value = '';
+  growInput();
+  try {
+    await set(ref(db, `supportInbox/${S.uid}`), { id, text, createdAt: serverTimestamp() });
+  } catch (e) {
+    console.error(e);
+    $('assistInput').value = text;
+    growInput();
+    toast(friendlyError(e, 'Сервер отклонил сообщение. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'), 'err');
+  }
 }
 
 function initExtras() {
@@ -844,9 +1000,16 @@ function initExtras() {
   $('assistForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const v = $('assistInput').value;
+    if (assistMode === 'support') { sendSupport(v); return; }
     $('assistInput').value = '';
+    growInput();
     assistAsk(v);
   });
+  $('assistInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); $('assistForm').requestSubmit(); }
+  });
+  $('assistInput').addEventListener('input', growInput);
+  $('assistSwitch').addEventListener('click', () => setAssistMode(assistMode === 'support' ? 'help' : 'support'));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('assist').hidden && !$('newsDlg').open) closeAssistant(); });
 }
 
@@ -860,12 +1023,137 @@ function renderStats(ch) {
   set2('stPts', ch.points.on ? 'Включены' : 'Выключены', ch.points.on);
 }
 
+// ---------- Статистика чата ----------
+
+function ensureStatsSub() {
+  if (!S || !S.active || S.statsFor === S.active) return;
+  try { S.unsubStats?.(); } catch { /* */ }
+  const sid = S.id;
+  const nick = S.active;
+  S.statsFor = nick;
+  S.statsData = undefined;
+  S.unsubStats = onValue(
+    ref(db, `stats/${nick}`),
+    (snap) => {
+      if (!S || S.id !== sid || S.active !== nick) return;
+      S.statsData = snap.val() || {};
+      renderChatStats();
+    },
+    (err) => {
+      console.error(err);
+      if (S && S.id === sid && S.active === nick) { S.statsData = null; renderChatStats(); }
+    },
+  );
+}
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+function svgEl(tag, attrs = {}, children = []) {
+  const n = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+  for (const c of children) n.append(c);
+  return n;
+}
+
+// Подходящий «круглый» максимум для оси: 5, 10, 20, 50, 100, 200...
+function niceMax(v) {
+  if (v <= 5) return 5;
+  const p = 10 ** Math.floor(Math.log10(v));
+  for (const m of [1, 2, 5, 10]) if (v <= m * p) return m * p;
+  return 10 * p;
+}
+
+function drawActivityChart(series, mode) {
+  const box = $('statChart');
+  box.replaceChildren();
+  const W = 640, H = 220, L = 38, R = 8, T = 10, B = 26;
+  const iw = W - L - R, ih = H - T - B;
+  const max = niceMax(Math.max(0, ...series.bars.map((b) => b.value)));
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', class: 'chart',
+    'aria-label': mode === '24h' ? 'Сообщений в чате по часам за последние 24 часа' : 'Сообщений в чате по дням за последние 14 дней' });
+  for (let i = 0; i <= 4; i++) {
+    const y = T + ih - (ih * i) / 4;
+    svg.append(svgEl('line', { x1: L, x2: W - R, y1: y, y2: y, class: 'grid' }));
+    svg.append(svgEl('text', { x: L - 6, y: y + 4, class: 'axis', 'text-anchor': 'end' }, [document.createTextNode(String(Math.round((max * i) / 4)))]));
+  }
+  const n = series.bars.length;
+  const slot = iw / n;
+  const bw = Math.max(3, slot * 0.68);
+  const every = mode === '24h' ? 3 : 2;
+  series.bars.forEach((b, i) => {
+    const h = b.value ? Math.max(2, (b.value / max) * ih) : 0;
+    const x = L + i * slot + (slot - bw) / 2;
+    const g = svgEl('g', {}, [svgEl('title', {}, [document.createTextNode(`${b.title}: ${b.value}`)])]);
+    // невидимая область нажатия на всю колонку, чтобы подсказка появлялась и у низких столбиков
+    g.append(svgEl('rect', { x: L + i * slot, y: T, width: slot, height: ih, class: 'hit' }));
+    if (h) g.append(svgEl('rect', { x, y: T + ih - h, width: bw, height: h, rx: 3, class: 'bar' }));
+    svg.append(g);
+    if ((n - 1 - i) % every === 0) {
+      svg.append(svgEl('text', { x: x + bw / 2, y: H - 8, class: 'axis', 'text-anchor': 'middle' }, [document.createTextNode(b.label)]));
+    }
+  });
+  box.append(svg);
+}
+
+function renderChatStats() {
+  if (!S) return;
+  const d = S.statsData;
+  const mode = S.statsMode;
+  $('statMode24').setAttribute('aria-pressed', String(mode === '24h'));
+  $('statMode14').setAttribute('aria-pressed', String(mode === '14d'));
+  const list = $('chatTop');
+  list.replaceChildren();
+  if (d === undefined) {
+    $('chatTopEmpty').textContent = 'Загрузка…'; $('chatTopEmpty').hidden = false;
+    $('statChart').replaceChildren(); $('statChartEmpty').hidden = true;
+    for (const id of ['stat24', 'stat14', 'statPeak']) $(id).textContent = '…';
+    return;
+  }
+  if (d === null) {
+    $('chatTopEmpty').textContent = 'Нет доступа к статистике. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'; $('chatTopEmpty').hidden = false;
+    return;
+  }
+  const nowMs = Date.now();
+  const hours = d.hours || {};
+  const s24 = activitySeries(hours, nowMs, '24h');
+  const s14 = activitySeries(hours, nowMs, '14d');
+  $('stat24').textContent = String(s24.sum);
+  $('stat14').textContent = String(s14.sum);
+  $('statPeak').textContent = s24.peak ? `${s24.peak.title.slice(-5)}` : '—';
+  const cur = mode === '24h' ? s24 : s14;
+  drawActivityChart(cur, mode);
+  $('statChartEmpty').hidden = cur.sum > 0;
+  const { total, top } = topChatters(d.users, 10);
+  const topMax = top.length ? top[0].n : 1;
+  top.forEach((r, i) => {
+    list.append(el('li', { class: 'toprow' }, [
+      el('span', { class: `rankno r${i + 1}`, text: `#${i + 1}` }),
+      el('span', { class: 'topname' }, [
+        el('span', { text: r.nick }),
+        el('span', { class: 'meter' }, [el('span', { class: 'meter-fill', style: `width:${Math.max(3, Math.round((r.n / topMax) * 100))}%` })]),
+      ]),
+      el('span', { class: 'topval', text: `${r.n} сообщ.` }),
+    ]));
+  });
+  $('chatTopTotal').textContent = total ? `(всего зрителей в списке: ${total})` : '';
+  $('chatTopEmpty').textContent = 'Пока нет данных: статистика копится с момента, как бот обновлён и в чате появились сообщения.';
+  $('chatTopEmpty').hidden = total > 0;
+}
+
+function onStatMode(mode) {
+  if (!S) return;
+  S.statsMode = mode;
+  renderChatStats();
+}
+
 function stopExtras() {
   if (!S) return;
   try { S.unsubPurchases?.(); } catch { /* */ }
   try { S.unsubPoints?.(); } catch { /* */ }
   try { S.unsubPred?.(); } catch { /* */ }
-  S.unsubPurchases = S.unsubPoints = S.unsubPred = null;
+  try { S.unsubStats?.(); } catch { /* */ }
+  S.unsubPurchases = S.unsubPoints = S.unsubPred = S.unsubStats = null;
+  S.statsData = undefined;
+  S.statsFor = null;
   S.predLink = undefined;
   S.predFor = null;
   S.purchases = [];
@@ -1485,6 +1773,7 @@ function showPanel(name) {
   $('navGroupManage').hidden = !isOwn();
   if (name === 'points' || name === 'overview') { ensurePointsSub(); renderLeaders(); }
   if (name === 'pred') { ensurePredSub(); renderPred(); }
+  if (name === 'stats') { ensureStatsSub(); renderChatStats(); }
 }
 
 function onNavClick(name) {
@@ -2361,6 +2650,8 @@ function fillBotName() {
 function bindUi() {
   initExtras();
   $('ovTopMore').addEventListener('click', () => onNavClick('points'));
+  $('statMode24').addEventListener('click', () => onStatMode('24h'));
+  $('statMode14').addEventListener('click', () => onStatMode('14d'));
   buildFilterForm();
 
   $('googleBtn').addEventListener('click', startGoogleLogin);

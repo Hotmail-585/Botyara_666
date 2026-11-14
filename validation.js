@@ -678,3 +678,56 @@ export function purchasesOf(raw) {
     .map(([id, p]) => ({ id, user: p.user, item: p.item, cost: Number.isFinite(p.cost) ? p.cost : 0, at: Number.isFinite(p.at) ? p.at : 0 }))
     .sort((a, b) => b.at - a.at);
 }
+
+// ---------- Статистика чата ----------
+// users: { ник: число сообщений }. Возвращает самых активных: [{ nick, n }], по убыванию, при равенстве по нику.
+export function topChatters(users, limit = 10) {
+  if (!users || typeof users !== 'object') return { total: 0, top: [] };
+  const rows = Object.entries(users)
+    .filter(([k, n]) => typeof k === 'string' && Number.isInteger(n) && n > 0)
+    .map(([nick, n]) => ({ nick, n }))
+    .sort((a, b) => b.n - a.n || (a.nick < b.nick ? -1 : a.nick > b.nick ? 1 : 0));
+  return { total: rows.length, top: rows.slice(0, limit) };
+}
+
+const pad2 = (n) => String(n).padStart(2, '0');
+
+// hours: { 'h<номер часа от 1970>': сообщений }. mode: '24h' (24 часа по часам) или '14d' (14 суток по дням).
+// tzMin: смещение часового пояса зрителя в минутах от UTC (по умолчанию как у браузера).
+// Возвращает { bars: [{ label, title, value }], sum, peak: { title, value } | null }.
+export function activitySeries(hours, nowMs, mode = '24h', tzMin = -new Date().getTimezoneOffset()) {
+  const HOUR = 3600 * 1000;
+  const src = hours && typeof hours === 'object' ? hours : {};
+  const localParts = (ms) => { const d = new Date(ms + tzMin * 60000); return d; };
+  const get = (idx) => { const n = src[`h${idx}`]; return Number.isInteger(n) && n > 0 ? n : 0; };
+  const curHour = Math.floor(nowMs / HOUR);
+  const bars = [];
+  if (mode === '24h') {
+    for (let i = 23; i >= 0; i--) {
+      const idx = curHour - i;
+      const d = localParts(idx * HOUR);
+      const hh = pad2(d.getUTCHours());
+      bars.push({ label: hh, title: `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)} ${hh}:00`, value: get(idx) });
+    }
+  } else {
+    const dayKey = (ms) => { const d = localParts(ms); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()); };
+    const todayKey = dayKey(nowMs);
+    const byDay = new Map();
+    for (let idx = curHour - 14 * 24 - 24; idx <= curHour; idx++) {
+      const n = get(idx);
+      if (!n) continue;
+      const k = dayKey(idx * HOUR);
+      byDay.set(k, (byDay.get(k) || 0) + n);
+    }
+    for (let i = 13; i >= 0; i--) {
+      const k = todayKey - i * 86400000;
+      const d = new Date(k);
+      const lab = `${pad2(d.getUTCDate())}.${pad2(d.getUTCMonth() + 1)}`;
+      bars.push({ label: lab, title: lab, value: byDay.get(k) || 0 });
+    }
+  }
+  const sum = bars.reduce((a, b) => a + b.value, 0);
+  let peak = null;
+  for (const b of bars) if (b.value > 0 && (!peak || b.value > peak.value)) peak = { title: b.title, value: b.value };
+  return { bars, sum, peak };
+}

@@ -300,13 +300,18 @@ dialog.sheet[open] { display: flex; flex-direction: column; }
 .assist-head .logo { width: 34px; height: 34px; }
 .assist-head strong { display: block; line-height: 1.2; }
 .assist-head span.sub { color: var(--muted); font-size: .78rem; }
-.assist-head .iconbtn { margin-left: auto; }
+.assist-head .head-act { margin-left: auto; padding: 5px 10px; font-size: .8rem; white-space: nowrap; }
+.fab .pip { top: 2px; left: auto; right: 4px; border-color: var(--accent); background: #fff; }
+.msg.sys { align-self: center; background: transparent; border: 1px dashed var(--border); color: var(--muted); font-size: .85rem; text-align: center; }
+.msg .meta { display: block; margin-top: 4px; font-size: .72rem; opacity: .75; }
+.msg.me.wait { opacity: .7; }
 .assist-log { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 92%; padding: 10px 12px; border-radius: 14px; overflow-wrap: anywhere; }
 .msg.bot { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
 .msg.me { align-self: flex-end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
 .msg b { display: block; margin-bottom: 4px; }
 .msg p { margin: 4px 0; }
+.msg p, .msg .txt { white-space: pre-wrap; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .chip {
   appearance: none; border: 1px solid var(--border); background: var(--bg-side); color: var(--text);
@@ -315,10 +320,10 @@ dialog.sheet[open] { display: flex; flex-direction: column; }
 .chip:hover { border-color: var(--accent); color: var(--accent-ink); }
 .chip.go { border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .assist-form { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); background: var(--bg-side); }
-.assist-form input { flex: 1; }
+.assist-form input, .assist-form textarea { flex: 1; min-height: 40px; max-height: 120px; resize: none; font: inherit; }
 .assist-form .btn { min-height: 40px; padding: 0 14px; }
 @media (max-width: 520px) {
   .assist { right: 0; bottom: 0; width: 100vw; height: min(78vh, 600px); border-radius: 18px 18px 0 0; }
-  .fab span { display: none; }
+  .fab span:not(.pip) { display: none; }
   .fab { padding: 0 14px; }
 }
