@@ -182,7 +182,7 @@ import { getDatabase, ref, onValue, get, set, push, update, remove, serverTimest
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const CLIENT_ID = config.twitchClientId;
+let CLIENT_ID = config.twitchClientId;      // запасной вариант; основной берётся у бота (publicConfig/twitchClientId)
 const YT_KEY = config.youtubeApiKey || '';
 const MUSIC_REDIRECT = new URL('music.html', config.redirectUri || location.href).href;
 
@@ -197,6 +197,7 @@ $('themeBtn').onclick = () => {
 const app = initializeApp(config.firebase);
 const auth = getAuth(app);
 const db = getDatabase(app);
+const clientIdReady = get(ref(db, 'publicConfig/twitchClientId')).then((s) => { const v = s.val(); if (typeof v === 'string' && /^[a-z0-9]{20,40}$/i.test(v)) CLIENT_ID = v; }).catch(() => {});
 
 let uid = null, nick = null, key = null, cfg = {}, queue = [], control = {}, plays = {}, bans = { users: {}, tracks: {} }, fb = {}, playlists = {}, status = null;
 
@@ -283,6 +284,8 @@ function setupAuth() {
       if (!confirm('Отключить бота от наград? Награды останутся на Twitch, но заказы приниматься не будут.')) return;
       setMsg('Отключаю…', true); const c = await sendAuth({ action: 'disconnect' }); const m = AUTH_MSG[c] || ['Бот не ответил (запущен ли бот?).', false]; setMsg(m[0], m[1]); return;
     }
+    await clientIdReady;
+    if (!CLIENT_ID || String(CLIENT_ID).includes('ВСТАВЬТЕ')) { setMsg('Client ID не найден: бот не передал его сайту. Перезапустите бота.', false); return; }
     const st = rndKey(16); sessionStorage.setItem('music_oauth_state', st);
     const q = new URLSearchParams({ client_id: CLIENT_ID, redirect_uri: MUSIC_REDIRECT, response_type: 'code', scope: 'channel:manage:redemptions', state: st, force_verify: 'true' });
     location.href = 'https://id.twitch.tv/oauth2/authorize?' + q;
