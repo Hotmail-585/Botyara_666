@@ -12,7 +12,7 @@ firebase: {
   },
 
   // Twitch Developer Console → ваше приложение → Client ID
-  twitchClientId: '',
+  twitchClientId: '1q7kjj65cg2c0mrattz4awhm4gplxh',
 
   // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
   redirectUri: 'https://hotmail-585.github.io/Botyara_666/',
