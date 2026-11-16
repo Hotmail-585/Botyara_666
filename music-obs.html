@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Музыка — плеер для OBS</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { --accent:#3ddc84; --bg:#131315; --text:#f3f3f4; --opacity:0.88; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:transparent; font-family:Inter,'Segoe UI',Roboto,Arial,sans-serif; color:var(--text); overflow:hidden; }
+  #yt { position:absolute; left:-9999px; top:0; width:2px; height:2px; }
+  /* Список как в Tune2Live: узкие полосы по ширине текста, дальше по очереди — прозрачнее */
+  #list { display:flex; flex-direction:column; align-items:flex-start; gap:2px; padding:8px; max-width:100%; transition:opacity .4s; }
+  #list.hidden { opacity:0; }
+  .row { display:flex; align-items:center; gap:8px; max-width:100%; padding:7px 9px; font-size:15px; line-height:1.25;
+         background:color-mix(in srgb, var(--bg) calc(var(--opacity) * 100%), transparent); border-radius:2px; }
+  .row.new { animation:in .35s ease-out; }
+  @keyframes in { from { opacity:0; transform:translateX(-14px); } }
+  .row .t { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+  .row .f { opacity:.6; font-size:.85em; white-space:nowrap; flex:none; }
+  .ico { flex:none; width:16px; text-align:center; color:var(--accent); font-size:14px; }
+  .thumb { width:40px; height:30px; border-radius:4px; background:rgba(255,255,255,.08) center/cover no-repeat; flex:none; }
+  .num { flex:none; opacity:.5; font-size:.85em; min-width:1.1em; text-align:right; }
+  .more { opacity:.7; font-size:.85em; }
+  #msg { position:fixed; left:12px; bottom:8px; font-size:12px; color:#fff; background:rgba(180,40,40,.9); padding:4px 8px; border-radius:6px; display:none; }
+  #msg.info { background:rgba(40,100,180,.9); }
+</style>
+</head>
+<body>
+<div id="yt"></div>
+<div id="list" class="hidden"></div>
+<div id="msg"></div>
+
+<script type="module">
+import { config } from './config.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
+import { getDatabase, ref, onValue, set, push, update, remove } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js';
+
+const $ = (id) => document.getElementById(id);
+const key = new URLSearchParams(location.search).get('k') || '';
+const msgEl = $('msg');
+let msgTimer = 0;
+function showMsg(text, info) {
+  msgEl.textContent = text; msgEl.className = info ? 'info' : ''; msgEl.style.display = 'block';
+  clearTimeout(msgTimer); msgTimer = setTimeout(() => { msgEl.style.display = 'none'; }, 8000);
+}
+if (!/^[A-Za-z0-9]{24,48}$/.test(key)) { showMsg('В ссылке нет ключа плеера (параметр k). Скопируйте ссылку из кабинета.'); throw new Error('no key'); }
+
+const app = initializeApp(config.firebase);
+const db = getDatabase(app);
+const P = (sub) => ref(db, `musicPlayer/${key}/${sub}`);
+
+let items = [];          // очередь по времени добавления
+let cur = null;          // { item }
+let starting = false, busyCmd = false, rerun = false;
+let volume = 50, paused = false, stopped = false;
+let lastCmd = null;
+let fb = {}, playlists = {}, bans = {};
+let ytPlayer = null, ytReady = false, ytWanted = null, ytApiLoading = false;
+let widget = { nextCount: 5, showFrom: false, showThumb: false, hideWhenIdle: false };
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ───── виджет: список как у Tune2Live ─────
+const seen = new Set();
+const thumbOf = (id) => `https://i.ytimg.com/vi/${encodeURIComponent(id)}/mqdefault.jpg`;
+const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+function applyWidget(w) {
+  w = w || {};
+  const root = document.documentElement.style;
+  root.setProperty('--accent', w.accent || '#3ddc84');
+  root.setProperty('--bg', w.bg || '#131315');
+  root.setProperty('--text', w.text || '#f3f3f4');
+  root.setProperty('--opacity', String((w.opacity ?? 88) / 100));
+  widget = { nextCount: w.nextCount ?? 5, showFrom: w.showFrom === true, showThumb: w.showThumb === true, hideWhenIdle: w.hideWhenIdle === true };
+  render();
+}
+function render() {
+  const box = $('list');
+  const upcoming = items.filter((i) => !cur || i.key !== cur.item.key);
+  const shown = upcoming.slice(0, widget.nextCount);
+  const hide = widget.hideWhenIdle && !cur && !items.length;
+  box.classList.toggle('hidden', hide);
+  const th = (i) => (widget.showThumb ? `<div class="thumb" style="background-image:url('${thumbOf(i.id)}')"></div>` : '');
+  const by = (i) => (widget.showFrom && i.from ? `<span class="f">${esc(i.from)}</span>` : '');
+  const rowCls = (k) => { const n = !seen.has(k); seen.add(k); return n ? ' new' : ''; };
+  const rows = [];
+  if (cur) {
+    const i = cur.item;
+    rows.push(`<div class="row now${rowCls(i.key)}"><span class="ico">${stopped ? '⏹' : paused ? '⏸' : '▶'}</span>${th(i)}<span class="t">${esc(i.title)}</span>${by(i)}</div>`);
+  } else if (!items.length) {
+    rows.push(`<div class="row"><span class="t">Очередь пуста — закажите трек за баллы канала</span></div>`);
+  } else {
+    rows.push(`<div class="row"><span class="ico">${stopped ? '⏹' : '…'}</span><span class="t">${stopped ? 'Остановлено' : 'Загрузка…'}</span></div>`);
+  }
+  shown.forEach((i) => rows.push(`<div class="row${rowCls(i.key)}">${th(i)}<span class="t">${esc(i.title)}</span>${by(i)}</div>`));
+  if (upcoming.length > shown.length && widget.nextCount > 0) rows.push(`<div class="row more">и ещё ${upcoming.length - shown.length}</div>`);
+  const n = rows.length;
+  box.innerHTML = rows.map((r, k) => r.replace('class="row', `style="opacity:${Math.max(0.3, 1 - k * (0.6 / Math.max(n - 1, 4))).toFixed(2)}" class="row`)).join('');
+  if (seen.size > 500) seen.clear();
+}
+
+// ───── YouTube ─────
+function loadYtApi() {
+  if (ytApiLoading) return; ytApiLoading = true;
+  const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
+  window.onYouTubeIframeAPIReady = () => {
+    ytPlayer = new YT.Player('yt', {
+      height: '2', width: '2', playerVars: { autoplay: 1, controls: 0, playsinline: 1 },
+      events: {
+        onReady: () => { ytReady = true; ytPlayer.setVolume(volume); if (ytWanted) { const id = ytWanted; ytWanted = null; ytPlayer.loadVideoById(id); } },
+        onStateChange: (e) => { if (e.data === 0 && cur) finish('played'); if (e.data === 1 && (paused || stopped)) ytPlayer.pauseVideo(); },
+        onError: () => { if (cur) { showMsg('YouTube не смог проиграть этот трек (возможно, встраивание запрещено), пропускаю.'); finish('error'); } },
+      },
+    });
+  };
+}
+function startYt(item) {
+  cur = { item };
+  if (ytReady) ytPlayer.loadVideoById(item.id); else { ytWanted = item.id; loadYtApi(); }
+}
+function stopPlayers() {
+  try { if (ytReady) ytPlayer.stopVideo(); } catch (e) { /* */ }
+  ytWanted = null;
+}
+
+// ───── очередь ─────
+async function finish(result) {
+  if (!cur) return;
+  const { item } = cur;
+  cur = null;
+  stopPlayers();
+  render();
+  try {
+    await push(P('history'), { id: item.id, title: item.title, channel: item.channel || '', from: item.from || '', source: item.source || '', ts: Date.now(), result });
+    await remove(P(`queue/${item.key}`));
+    pruneHistory();
+  } catch (e) { showMsg('Не удалось обновить очередь: ' + e.message); }
+  tick();
+}
+let pruning = false;
+function pruneHistory() {
+  if (pruning) return; pruning = true;
+  onValue(P('history'), (s) => {
+    const v = s.val() || {}; const keys = Object.keys(v).sort((a, b) => v[a].ts - v[b].ts);
+    keys.slice(0, Math.max(0, keys.length - 100)).forEach((k) => remove(P(`history/${k}`)).catch(() => {}));
+    pruning = false;
+  }, { onlyOnce: true });
+}
+async function returnCurrent() {            // «стоп»: трек возвращается в очередь и ждёт
+  if (!cur) return;
+  const { item } = cur; cur = null; stopPlayers();
+  try { await update(P(`queue/${item.key}`), { status: 'approved' }); } catch (e) { /* */ }
+  render();
+}
+async function tick() {
+  if (starting || busyCmd) { rerun = true; return; }
+  rerun = false;
+  if (stopped) { if (cur) await returnCurrent(); render(); return; }
+  if (cur) {
+    if (!items.some((i) => i.key === cur.item.key)) { stopPlayers(); cur = null; render(); }   // трек удалили из панели
+    else return;
+  }
+  const item = items.find((i) => i.status === 'playing') || items.find((i) => i.status === 'approved');
+  if (!item) { render(); maybeFallback(); return; }
+  starting = true;
+  try {
+    if (item.status !== 'playing') await update(P(`queue/${item.key}`), { status: 'playing' });
+    startYt(item);
+  } catch (e) { showMsg('Ошибка запуска: ' + e.message); }
+  starting = false;
+  render();
+  if (rerun) tick();
+}
+
+// ───── «если очередь пуста — играй плейлист стримера» ─────
+let fbTimer = 0, fbBusy = false;
+function maybeFallback() {
+  clearTimeout(fbTimer);
+  fbTimer = setTimeout(async () => {
+    if (fbBusy || cur || stopped || items.length || starting || busyCmd) return;
+    if ((fb.mode || 'off') === 'off' || !fb.active) return;
+    const pl = playlists[fb.active]; const tracks = pl && pl.tracks ? Object.values(pl.tracks) : [];
+    if (!tracks.length) return;
+    fbBusy = true;
+    try {
+      let idx = (fb.index || 0) % tracks.length;
+      if (fb.mode === 'shuffle') idx = Math.floor(Math.random() * tracks.length);
+      for (let tries = 0; tries < tracks.length; tries++) {      // пропускаем забаненные треки
+        const t = tracks[(idx + tries) % tracks.length];
+        if ((bans.tracks || {})[t.id]) continue;
+        await push(P('queue'), { id: t.id, title: String(t.title).slice(0, 200), channel: String(t.channel || '').slice(0, 100), from: '📂 ' + String(pl.title).slice(0, 30), ts: Date.now(), status: 'approved', source: 'playlist' });
+        await update(P('fb'), { index: (idx + tries + 1) % tracks.length });
+        break;
+      }
+    } catch (e) { /* повторим при следующем изменении */ }
+    fbBusy = false;
+  }, 1500);
+}
+
+// ───── команды управления ─────
+function position() {
+  if (!cur) return { pos: 0, dur: 0 };
+  try { if (ytReady) return { pos: ytPlayer.getCurrentTime() || 0, dur: ytPlayer.getDuration() || 0 }; } catch (e) { /* */ }
+  return { pos: 0, dur: 0 };
+}
+function seekTo(sec) { try { if (ytReady && cur) ytPlayer.seekTo(Math.max(0, sec), true); } catch (e) { /* */ } }
+
+async function doPrev() {
+  busyCmd = true;
+  try {
+    const hist = await new Promise((res) => onValue(P('history'), (s) => res(s.val() || {}), { onlyOnce: true }));
+    const k = Object.keys(hist).sort((a, b) => hist[b].ts - hist[a].ts)[0];
+    if (!k || !hist[k].id) { seekTo(0); return; }                       // истории нет: просто сначала
+    const h = hist[k];
+    const base = items.length ? Math.min(...items.map((i) => i.ts)) : Date.now();
+    const was = cur; cur = null; stopPlayers();
+    await push(P('queue'), { id: h.id, title: h.title, channel: h.channel || '', from: h.from || '', source: 'back', ts: base - 2, status: 'approved' });
+    await remove(P(`history/${k}`));
+    if (was) await update(P(`queue/${was.item.key}`), { ts: base - 1, status: 'approved' });   // текущий трек встанет следом
+    if (stopped) await update(P('control'), { stopped: false });
+  } catch (e) { showMsg('Не удалось вернуться назад: ' + e.message); }
+  finally { busyCmd = false; tick(); }
+}
+async function doSkipIdle() {               // «пропустить», пока ничего не играет
+  const it = items[0]; if (!it) return;
+  try {
+    await push(P('history'), { id: it.id, title: it.title, channel: it.channel || '', from: it.from || '', source: it.source || '', ts: Date.now(), result: 'skipped' });
+    await remove(P(`queue/${it.key}`));
+  } catch (e) { /* */ }
+}
+function runCmd(c) {
+  if (c.a === 'skip') { if (cur) finish('skipped'); else doSkipIdle(); }
+  else if (c.a === 'prev') doPrev();
+  else if (c.a === 'restart') seekTo(0);
+  else if (c.a === 'seek') seekTo(position().pos + (Number(c.d) || 0));
+}
+
+onValue(P('queue'), (snap) => {
+  const v = snap.val() || {};
+  items = Object.entries(v).map(([k, x]) => ({ ...x, key: k })).sort((a, b) => a.ts - b.ts);
+  tick(); render();
+});
+onValue(P('control'), (snap) => {
+  const c = snap.val() || {};
+  volume = Number.isFinite(c.volume) ? c.volume : 50;
+  try { if (ytReady) ytPlayer.setVolume(volume); } catch (e) { /* */ }
+  const wasPaused = paused, wasStopped = stopped;
+  paused = c.paused === true; stopped = c.stopped === true;
+  if (stopped && !wasStopped) { returnCurrent(); }
+  else if (!stopped && wasStopped) { tick(); }
+  if (paused !== wasPaused && cur) {
+    try { if (ytReady) { if (paused) ytPlayer.pauseVideo(); else ytPlayer.playVideo(); } } catch (e) { /* */ }
+  }
+  if (lastCmd === null) lastCmd = c.cmd ? c.cmd.n : 0;
+  else if (c.cmd && c.cmd.n !== lastCmd) { lastCmd = c.cmd.n; runCmd(c.cmd); }
+  render();
+});
+onValue(P('widget'), (snap) => applyWidget(snap.val()));
+onValue(P('fb'), (s) => { fb = s.val() || {}; maybeFallback(); });
+onValue(P('playlists'), (s) => { playlists = s.val() || {}; maybeFallback(); });
+onValue(P('bans'), (s) => { bans = s.val() || {}; });
+
+// ───── прогресс и состояние для панелей ─────
+setInterval(() => { const { pos, dur } = position(); const f = $('fill'); if (f) f.style.width = dur ? Math.min(100, pos / dur * 100) + '%' : '0'; const t = $('time'); if (t) t.textContent = dur ? `${mmss(pos)} / ${mmss(dur)}` : ''; }, 500);
+let lastState = '';
+setInterval(() => {
+  const { pos, dur } = position();
+  const st = { id: cur ? cur.item.key : '', paused, stopped, pos: Math.round(pos), dur: Math.round(dur) };
+  const sig = JSON.stringify([st.id, st.paused, st.stopped, Math.floor(st.pos / 3)]);
+  if (sig === lastState) return;
+  lastState = sig;
+  update(P('state'), { ...st, at: Date.now() }).catch(() => {});
+}, 3000);
+// «пульс»: панели видят, что плеер жив, даже когда ничего не меняется
+setInterval(() => { update(P('state'), { at: Date.now() }).catch(() => {}); }, 15000);
+
+render();
+</script>
+</body>
+</html>

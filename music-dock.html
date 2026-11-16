@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Музыка — панель для OBS</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { --bg:#0a0a0b; --card:#131315; --card2:#1b1b1e; --line:#29292d; --text:#f3f3f4; --mute:#9b9ba3; --acc:#e5383b; --acc2:#c92d30; --ok:#3ecf8e; --err:#ff7b72; color-scheme:dark; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.45 Inter,system-ui,'Segoe UI',Roboto,Arial,sans-serif; padding:8px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:12px; margin-bottom:10px; }
+  h2 { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); margin:0 0 6px; }
+  #title { font-weight:700; font-size:15px; word-break:break-word; }
+  .mute { color:var(--mute); font-size:12px; } .err { color:var(--err); } .ok { color:var(--ok); }
+  .bar { height:5px; border-radius:3px; background:var(--card2); margin:8px 0; overflow:hidden; } .bar div { height:100%; width:0; background:var(--acc); }
+  .btns { display:flex; gap:6px; flex-wrap:wrap; }
+  button { background:var(--card2); color:var(--text); border:1px solid var(--line); border-radius:10px; font-weight:600; padding:7px 10px; font:inherit; cursor:pointer; flex:1; min-width:44px; }
+  button:hover { border-color:var(--acc); } button.acc { background:var(--acc); border-color:var(--acc); color:#fff; } button.acc:hover { background:var(--acc2); border-color:var(--acc2); } button.sm { flex:none; padding:4px 8px; font-size:12px; }
+  input[type=text] { background:var(--card2); border:1px solid var(--line); color:var(--text); border-radius:8px; padding:7px 9px; font:inherit; flex:1; min-width:0; }
+  .row { display:flex; gap:6px; align-items:center; margin-top:6px; }
+  .item { display:flex; gap:6px; align-items:center; padding:7px 9px; margin-top:6px; background:var(--card2); border:1px solid var(--line); border-radius:10px; }
+  .item .t { flex:1; min-width:0; } .item .t b { display:block; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tag { font-size:10px; background:var(--acc); border-radius:4px; padding:1px 5px; margin-left:4px; }
+  input[type=range] { flex:1; accent-color:var(--acc); }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>Сейчас</h2>
+  <div id="title" class="mute">—</div>
+  <div id="sub" class="mute"></div>
+  <div class="bar"><div id="fill"></div></div>
+  <div class="btns">
+    <button id="bPrev" title="Назад (предыдущий трек)">⏮</button>
+    <button id="bPlay" class="acc" title="Играть">▶</button>
+    <button id="bPause" title="Пауза / продолжить">⏸</button>
+    <button id="bStop" title="Остановить (трек вернётся в очередь)">⏹</button>
+    <button id="bSkip" title="Пропустить">⏭</button>
+  </div>
+  <div class="btns" style="margin-top:6px">
+    <button id="bBack10">⏪ 10с</button><button id="bFwd10">10с ⏩</button><button id="bRestart">↺ сначала</button>
+  </div>
+  <div class="row"><span class="mute">🔈</span><input type="range" id="vol" min="0" max="100"><span class="mute" id="volN"></span></div>
+  <div class="row" id="curBans" style="display:none">
+    <button class="sm" id="bBanCurT">🚫 забанить трек</button><button class="sm" id="bBanCurU">👤 забанить зрителя</button>
+  </div>
+</div>
+
+<div class="card">
+  <h2>Добавить трек</h2>
+  <div class="row"><input type="text" id="manual" placeholder="Ссылка на YouTube"><button class="sm acc" id="manualAdd">＋</button></div>
+  <div class="mute" id="manualSt"></div>
+</div>
+
+<div class="card"><h2>Очередь</h2><div id="queue" class="mute">пусто</div></div>
+<div class="card"><h2>Последние заказы</h2><div id="log" class="mute">пока нет</div></div>
+
+<script type="module">
+import { config } from './config.js';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
+import { getDatabase, ref, onValue, get, push, update, remove } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js';
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const key = new URLSearchParams(location.search).get('k') || '';
+if (!/^[A-Za-z0-9]{24,48}$/.test(key)) { document.body.innerHTML = '<div class="card err">В ссылке нет ключа (параметр k). Скопируйте ссылку на панель из кабинета.</div>'; throw new Error('no key'); }
+const db = getDatabase(initializeApp(config.firebase));
+const P = (sub) => ref(db, `musicPlayer/${key}/${sub}`);
+
+let queue = [], control = {}, state = {};
+const norm = (s) => String(s || '').trim().toLowerCase().replace(/^@/, '');
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+const cmd = (a, d) => update(P('control'), { cmd: { a, n: Date.now(), ...(d !== undefined ? { d } : {}) } });
+
+onValue(P('queue'), (s) => { const v = s.val() || {}; queue = Object.entries(v).map(([k, x]) => ({ ...x, key: k })).sort((a, b) => a.ts - b.ts); renderQueue(); renderNow(); });
+onValue(P('control'), (s) => {
+  control = s.val() || {};
+  const v = Number.isFinite(control.volume) ? control.volume : 50;
+  if (document.activeElement !== $('vol')) $('vol').value = v; $('volN').textContent = v;
+  $('bPause').textContent = control.paused ? '▶ дальше' : '⏸'; renderNow();
+});
+onValue(P('state'), (s) => { state = s.val() || {}; renderNow(); });
+onValue(P('log'), (s) => {
+  const list = Object.values(s.val() || {}).sort((a, b) => b.at - a.at).slice(0, 8);
+  $('log').innerHTML = list.length ? list.map((l) => `<div class="item"><div class="t"><b class="${l.result === 'added' ? 'ok' : 'err'}">${l.result === 'added' ? '✔' : '✖'} ${esc(l.user)}</b><span class="mute">${esc(l.result === 'added' ? l.reason : 'отклонён: ' + l.reason)}</span></div></div>`).join('') : 'пока нет';
+});
+
+function renderNow() {
+  const it = queue.find((i) => i.status === 'playing') || queue.find((i) => i.key === state.id);
+  const alive = state.at && Date.now() - state.at < 40000;
+  $('title').className = it ? '' : 'mute';
+  $('title').textContent = it ? it.title : (control.stopped ? 'Остановлено' : 'Ничего не играет');
+  $('sub').innerHTML = (it ? `заказал(а): ${esc(it.from)}${state.dur ? ` · ${fmt(state.pos)} / ${fmt(state.dur)}` : ''}` : '') + (alive ? '' : '<div class="err">Плеер в OBS не отвечает: добавлен ли источник «Браузер» со ссылкой на плеер?</div>');
+  $('fill').style.width = state.dur ? Math.min(100, state.pos / state.dur * 100) + '%' : '0';
+  $('curBans').style.display = it ? 'flex' : 'none';
+  $('bPlay').style.display = control.stopped ? '' : 'none';
+  $('bStop').style.display = control.stopped ? 'none' : '';
+}
+function renderQueue() {
+  $('queue').innerHTML = queue.length ? queue.map((i) => `<div class="item"><div class="t"><b>${esc(i.title)}${i.status === 'playing' ? '<span class="tag">играет</span>' : ''}</b><span class="mute">${esc(i.from)}</span></div>` +
+    `<button class="sm" title="Убрать" data-rm="${esc(i.key)}">✕</button><button class="sm" title="Забанить трек" data-bt="${esc(i.key)}">🚫</button>${String(i.from).startsWith('📂') ? '' : `<button class="sm" title="Забанить зрителя" data-bu="${esc(i.key)}">👤</button>`}</div>`).join('') : 'пусто';
+}
+
+// ───── баны ─────
+const fresh = async () => Object.entries((await get(P('queue'))).val() || {}).map(([k, x]) => ({ ...x, key: k }));
+async function banTrack(id) {
+  await update(P('bans/tracks'), { [id]: true });
+  for (const i of (await fresh()).filter((x) => x.id === id)) await remove(P(`queue/${i.key}`));
+}
+async function banUser(name) {
+  const n = norm(name); if (!/^[a-z0-9_]{1,25}$/.test(n)) return;
+  await update(P('bans/users'), { [n]: true });
+  for (const i of (await fresh()).filter((x) => norm(x.from) === n)) await remove(P(`queue/${i.key}`));
+}
+const itemOf = (k) => queue.find((i) => i.key === k);
+$('queue').addEventListener('click', async (e) => {
+  const d = e.target.dataset; let it;
+  try {
+    if (d.rm) await remove(P(`queue/${d.rm}`));
+    else if (d.bt && (it = itemOf(d.bt)) && confirm(`Забанить трек «${it.title}»? Он больше не будет приниматься.`)) await banTrack(it.id);
+    else if (d.bu && (it = itemOf(d.bu)) && confirm(`Забанить зрителя ${it.from}? Его заказы будут отклоняться, треки из очереди удалятся.`)) await banUser(it.from);
+  } catch (err) { alert('Не удалось: ' + err.message); }
+});
+const curItem = () => queue.find((i) => i.status === 'playing') || queue.find((i) => i.key === state.id);
+$('bBanCurT').onclick = async () => { const it = curItem(); if (it && confirm(`Забанить трек «${it.title}»?`)) await banTrack(it.id); };
+$('bBanCurU').onclick = async () => { const it = curItem(); if (it && !String(it.from).startsWith('📂') && confirm(`Забанить зрителя ${it.from}?`)) await banUser(it.from); };
+
+// ───── управление ─────
+$('bPrev').onclick = () => cmd('prev');
+$('bSkip').onclick = () => cmd('skip');
+$('bPlay').onclick = () => update(P('control'), { stopped: false, paused: false });
+$('bStop').onclick = () => update(P('control'), { stopped: true });
+$('bPause').onclick = () => update(P('control'), control.stopped ? { stopped: false, paused: false } : { paused: !control.paused });
+$('bBack10').onclick = () => cmd('seek', -10);
+$('bFwd10').onclick = () => cmd('seek', 10);
+$('bRestart').onclick = () => cmd('restart');
+$('vol').oninput = (e) => { $('volN').textContent = e.target.value; };
+$('vol').onchange = (e) => update(P('control'), { volume: Number(e.target.value) });
+setInterval(renderNow, 5000);
+
+// ───── ручное добавление ─────
+const extractVideoId = (t) => { const m = String(t).match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([A-Za-z0-9_-]{11})/); return m ? m[1] : (/^[A-Za-z0-9_-]{11}$/.test(String(t).trim()) ? String(t).trim() : null); };
+$('manualAdd').onclick = async () => {
+  const st = $('manualSt'); const id = extractVideoId($('manual').value);
+  const say = (m, ok) => { st.className = 'mute ' + (ok ? 'ok' : 'err'); st.textContent = m; };
+  if (!id) return say('Не похоже на ссылку YouTube');
+  let title = 'YouTube track', channel = '';
+  try { const r = await fetch(`https://www.youtube.com/oembed?url=https://youtube.com/watch?v=${id}&format=json`); if (r.ok) { const d = await r.json(); title = d.title; channel = d.author_name; } } catch (e) { /* */ }
+  try {
+    await push(P('queue'), { id, title: String(title).slice(0, 200), channel: String(channel).slice(0, 100), from: 'Стример', ts: Date.now(), status: 'approved', source: 'manual' });
+    $('manual').value = ''; say('Добавлено', true);
+  } catch (e) { say(e.message); }
+};
+</script>
+</body>
+</html>

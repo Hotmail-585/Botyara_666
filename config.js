@@ -8,11 +8,11 @@ firebase: {
     authDomain: 'botyara-f4b18.firebaseapp.com',
     databaseURL: 'https://botyara-f4b18-default-rtdb.firebaseio.com',
     projectId: 'botyara-f4b18',
-    appId: '1:123064665877:web:8b5abb323c5578fb260b1c',
+    appId: '1:123064665877:web:3e4592412ed36ad4260b1c',
   },
 
   // Twitch Developer Console → ваше приложение → Client ID
-  twitchClientId: '1q7kjj65cg2c0mrattz4awhm4gplxh',
+  twitchClientId: '9tmo6brpt2wbubp4m8p1nzekm4bfp2',
 
   // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
   redirectUri: 'https://hotmail-585.github.io/Botyara_666/',
@@ -26,4 +26,9 @@ firebase: {
 
   // Сколько секунд ждать ответа бота после входа через Twitch.
   linkTimeoutSec: 15,
+
+  // Страница «Музыка» (music.html): ключ YouTube Data API v3, нужен только для плейлистов.
+  // Google Cloud Console → APIs → YouTube Data API v3 → Credentials → API key (ограничьте его адресом сайта).
+  // Пусто = заказ отдельных треков работает, плейлисты — нет.
+  youtubeApiKey: '',
 };
