@@ -184,7 +184,7 @@ import { getDatabase, ref, onValue, get, set, push, update, remove, serverTimest
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 let CLIENT_ID = config.twitchClientId;      // запасной вариант; основной берётся у бота (publicConfig/twitchClientId)
-const YT_KEY = config.youtubeApiKey || '';
+let YT_KEY = config.youtubeApiKey || '';
 const MUSIC_REDIRECT = new URL('music.html', config.redirectUri || location.href).href;
 
 try { const t = localStorage.getItem('bot_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) { /* */ }
@@ -198,7 +198,15 @@ $('themeBtn').onclick = () => {
 const app = initializeApp(config.firebase);
 const auth = getAuth(app);
 const db = getDatabase(app);
-const clientIdReady = get(ref(db, 'publicConfig/twitchClientId')).then((s) => { const v = s.val(); if (typeof v === 'string' && /^[a-z0-9]{20,40}$/i.test(v)) CLIENT_ID = v; }).catch(() => {});
+const clientIdReady = get(ref(db, 'publicConfig')).then((s) => {
+  const pub = s.val() || {};
+  if (typeof pub.twitchClientId === 'string' && /^[a-z0-9]{20,40}$/i.test(pub.twitchClientId)) {
+    CLIENT_ID = pub.twitchClientId;
+  }
+  if (typeof pub.youtubeApiKey === 'string' && pub.youtubeApiKey.trim().length > 10) {
+    YT_KEY = pub.youtubeApiKey.trim();
+  }
+}).catch(() => {});
 
 let uid = null, nick = null, key = null, cfg = {}, queue = [], control = {}, plays = {}, bans = { users: {}, tracks: {} }, fb = {}, playlists = {}, status = null;
 
@@ -434,7 +442,8 @@ function setupPlaylists() {
   $('plAdd').onclick = async () => {
     const st = $('plSt'); const id = extractPlaylistId($('plUrl').value);
     const say = (m, e) => { st.className = e ? 'err' : 'ok'; st.textContent = m; };
-    if (!YT_KEY) return say('В config.js не задан youtubeApiKey (ключ YouTube Data API)', true);
+    await clientIdReady;
+    if (!YT_KEY) return say('Ключ YouTube API не найден: бот не передал его сайту (проверь publicConfig/youtubeApiKey)', true);
     if (!id) return say('Не похоже на ссылку плейлиста (нужен параметр list=)', true);
     $('plAdd').disabled = true; say('Загружаю…');
     try {
