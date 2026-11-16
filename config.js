@@ -30,5 +30,5 @@ firebase: {
   // Страница «Музыка» (music.html): ключ YouTube Data API v3, нужен только для плейлистов.
   // Google Cloud Console → APIs → YouTube Data API v3 → Credentials → API key (ограничьте его адресом сайта).
   // Пусто = заказ отдельных треков работает, плейлисты — нет.
-  youtubeApiKey: 'AIzaSyAUm7ZI7g_zbkB5BoZURZdQ1UUdzllTomg',
+  youtubeApiKey: '',
 };
