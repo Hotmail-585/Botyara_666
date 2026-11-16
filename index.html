@@ -21,6 +21,11 @@
       .side .navbtn { padding: 6px 12px; gap: 10px; font-size: .92rem; }
       .side .navgroup { margin: 8px 10px 2px; }
     }
+    /* Плитки на обзоре: компактнее, чтобы «Не подключены» умещалось в одну строку */
+    .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .stat { padding: 10px 14px; }
+    .stat .v { font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    @media (max-width: 700px) { .stats { grid-template-columns: 1fr 1fr; } }
   </style>
   <script type="module" src="app.js"></script>
 </head>
