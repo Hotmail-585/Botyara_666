@@ -15,7 +15,7 @@ firebase: {
   twitchClientId: '9tmo6brpt2wbubp4m8p1nzekm4bfp2',
 
   // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
-  redirectUri: 'https://hotmail-585.github.io/Botyara_666/', `https://hotmail-585.github.io/Botyara_666/music.html`
+  redirectUri: 'https://hotmail-585.github.io/Botyara_666/', `https://hotmail-585.github.io/Botyara_666/music.html`,
 
   // Twitch-ник бота (чат, где пишут !join). Пусто = в подсказках будет просто «в чате бота».
   botName: 'Botyara_666',
