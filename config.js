@@ -15,7 +15,7 @@ firebase: {
   twitchClientId: '9tmo6brpt2wbubp4m8p1nzekm4bfp2',
 
   // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
-  redirectUri: 'https://hotmail-585.github.io/Botyara_666/',
+  redirectUri: 'https://hotmail-585.github.io/Botyara_666/', `https://hotmail-585.github.io/Botyara_666/music.html`
 
   // Twitch-ник бота (чат, где пишут !join). Пусто = в подсказках будет просто «в чате бота».
   botName: 'Botyara_666',
@@ -30,5 +30,5 @@ firebase: {
   // Страница «Музыка» (music.html): ключ YouTube Data API v3, нужен только для плейлистов.
   // Google Cloud Console → APIs → YouTube Data API v3 → Credentials → API key (ограничьте его адресом сайта).
   // Пусто = заказ отдельных треков работает, плейлисты — нет.
-  youtubeApiKey: '',
+  youtubeApiKey: 'AIzaSyAUm7ZI7g_zbkB5BoZURZdQ1UUdzllTomg',
 };
