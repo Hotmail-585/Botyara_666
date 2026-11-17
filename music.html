@@ -183,8 +183,8 @@ import { getDatabase, ref, onValue, get, set, push, update, remove, serverTimest
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-let CLIENT_ID = config.twitchClientId;
-let YT_KEY = config.youtubeApiKey || '';
+let CLIENT_ID = '';   // приходит от бота (publicConfig)
+let YT_KEY = '';   // ключ YouTube приходит только от бота (publicConfig), из config.js он не читается
 const MUSIC_REDIRECT = new URL('music.html', config.redirectUri || location.href).href;
 
 try { const t = localStorage.getItem('bot_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) { /* */ }
@@ -375,7 +375,7 @@ async function videoInfo(id) {
 }
 async function ytList(path) {
   const r = await fetch(`https://www.googleapis.com/youtube/v3/${path}&key=${YT_KEY}`);
-  if (!r.ok) throw new Error('YouTube API: ' + r.status);
+  if (!r.ok) { let m = ''; try { const j = await r.json(); m = (j.error && j.error.message) || ''; } catch (e) { /* */ } throw new Error('YouTube API ' + r.status + (m ? ': ' + m.slice(0, 140) : '')); }
   return r.json();
 }
 async function playlistTracks(plId, max) {
@@ -443,7 +443,7 @@ function setupPlaylists() {
   const st = $('plSt'); const id = extractPlaylistId($('plUrl').value);
   const say = (m, e) => { st.className = e ? 'err' : 'ok'; st.textContent = m; };
   await clientIdReady;
-  if (!YT_KEY) return say('Ключ YouTube API не найден: бот не передал его сайту', true);
+  if (!YT_KEY) return say('Ключ YouTube не получен от бота: проверьте YOUTUBE_API_KEY в .env бота, перезапустите бота и опубликуйте правила базы с узлом publicConfig.', true);
     if (!id) return say('Не похоже на ссылку плейлиста (нужен параметр list=)', true);
     $('plAdd').disabled = true; say('Загружаю…');
     try {

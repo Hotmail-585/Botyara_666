@@ -12,11 +12,6 @@ firebase: {
     appId: '1:123064665877:web:3e4592412ed36ad4260b1c',
   },
 
-  // Twitch Client ID сюда вписывать НЕ нужно: бот берёт TWITCH_CLIENT_ID из своего .env и
-  // кладёт его в базу (publicConfig/twitchClientId), сайт читает его оттуда при запуске.
-  // Поле оставлено пустым как запасное значение.
-  twitchClientId: '',
-
   // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
   redirectUri: 'https://hotmail-585.github.io/Botyara_666/',
 
@@ -30,8 +25,6 @@ firebase: {
   // Сколько секунд ждать ответа бота после входа через Twitch.
   linkTimeoutSec: 15,
 
-  // Ключ YouTube Data API v3 (плейлисты на странице «Музыка») тоже вписывать сюда не нужно:
-  // бот берёт YOUTUBE_API_KEY из своего .env и кладёт его в publicConfig/youtubeApiKey.
-  // Ограничьте ключ в Google Cloud Console адресом сайта (HTTP referrer): в браузере он всё равно виден.
-  youtubeApiKey: '',
+  // Twitch Client ID и ключ YouTube здесь не нужны: сайт получает их от бота (publicConfig в базе),
+  // а бот берёт их из своего .env (TWITCH_CLIENT_ID, YOUTUBE_API_KEY).
 };

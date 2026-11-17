@@ -228,7 +228,7 @@ function configProblem() {
   const f = config.firebase || {};
   const needed = [f.apiKey, f.authDomain, f.databaseURL, f.projectId, f.appId];
   if (needed.some((v) => !v || String(v).includes('ВСТАВЬТЕ'))) {
-    return 'Сайт ещё не настроен: откройте файл config.js и впишите значения Firebase (Twitch Client ID приходит от бота из его .env).';
+    return 'Сайт ещё не настроен: откройте файл config.js и впишите значения Firebase (Twitch Client ID и ключ YouTube приходят от бота).';
   }
   return null;
 }
