@@ -5,7 +5,7 @@ import {
   getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
 import {
-  getDatabase, ref, onValue, set, update, runTransaction, serverTimestamp,
+  getDatabase, ref, onValue, get, set, update, runTransaction, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js';
 
 import { config } from './config.js';
@@ -2779,6 +2779,11 @@ async function main() {
     const app = initializeApp(config.firebase);
     auth = getAuth(app);
     db = getDatabase(app);
+    try {
+  const snap = await get(ref(db, 'publicConfig/twitchClientId'));
+  const v = snap.val();
+  if (typeof v === 'string' && v.trim()) config.twitchClientId = v.trim();
+} catch { /* */ }
   } catch (e) {
     console.error(e);
     showFatal('Не удалось запустить Firebase: проверьте значения в config.js.');
