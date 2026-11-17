@@ -183,7 +183,7 @@ import { getDatabase, ref, onValue, get, set, push, update, remove, serverTimest
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-let CLIENT_ID = config.twitchClientId;      // запасной вариант; основной берётся у бота (publicConfig/twitchClientId)
+let CLIENT_ID = config.twitchClientId;
 let YT_KEY = config.youtubeApiKey || '';
 const MUSIC_REDIRECT = new URL('music.html', config.redirectUri || location.href).href;
 
@@ -195,6 +195,16 @@ $('themeBtn').onclick = () => {
   try { localStorage.setItem('bot_theme', next); } catch (e) { /* */ }
 };
 
+  const clientIdReady = get(ref(db, 'publicConfig')).then((s) => {
+  const pub = s.val() || {};
+  if (typeof pub.twitchClientId === 'string' && /^[a-z0-9]{20,40}$/i.test(pub.twitchClientId)) {
+    CLIENT_ID = pub.twitchClientId;
+  }
+  if (typeof pub.youtubeApiKey === 'string' && pub.youtubeApiKey.trim().length > 10) {
+    YT_KEY = pub.youtubeApiKey.trim();
+  }
+}).catch(() => {});
+  
 const app = initializeApp(config.firebase);
 const auth = getAuth(app);
 const db = getDatabase(app);
@@ -440,10 +450,10 @@ function setupSettings() {
 function setupPlaylists() {
   document.querySelectorAll('[data-mode]').forEach((b) => (b.onclick = () => update(P('fb'), { mode: b.dataset.mode })));
   $('plAdd').onclick = async () => {
-    const st = $('plSt'); const id = extractPlaylistId($('plUrl').value);
-    const say = (m, e) => { st.className = e ? 'err' : 'ok'; st.textContent = m; };
-    await clientIdReady;
-    if (!YT_KEY) return say('Ключ YouTube API не найден: бот не передал его сайту (проверь publicConfig/youtubeApiKey)', true);
+  const st = $('plSt'); const id = extractPlaylistId($('plUrl').value);
+  const say = (m, e) => { st.className = e ? 'err' : 'ok'; st.textContent = m; };
+  await clientIdReady;
+  if (!YT_KEY) return say('Ключ YouTube API не найден: бот не передал его сайту', true);
     if (!id) return say('Не похоже на ссылку плейлиста (нужен параметр list=)', true);
     $('plAdd').disabled = true; say('Загружаю…');
     try {
