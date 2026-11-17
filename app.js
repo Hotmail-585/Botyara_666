@@ -226,9 +226,9 @@ function channelRef() { return ref(db, `channels/${S.active}`); }
 
 function configProblem() {
   const f = config.firebase || {};
-  const needed = [f.apiKey, f.authDomain, f.databaseURL, f.projectId, f.appId, config.twitchClientId];
+  const needed = [f.apiKey, f.authDomain, f.databaseURL, f.projectId, f.appId];
   if (needed.some((v) => !v || String(v).includes('ВСТАВЬТЕ'))) {
-    return 'Сайт ещё не настроен: откройте файл config.js и впишите значения Firebase и Twitch Client ID.';
+    return 'Сайт ещё не настроен: откройте файл config.js и впишите значения Firebase (Twitch Client ID приходит от бота из его .env).';
   }
   return null;
 }
@@ -253,6 +253,10 @@ function takeOauthState() {
 }
 
 function startLogin() {
+  if (!config.twitchClientId) {
+    toast('Бот ещё не передал сайту Twitch Client ID. Проверьте TWITCH_CLIENT_ID в .env бота и перезапустите его.', 'err');
+    return;
+  }
   const state = makeState(crypto.getRandomValues(new Uint8Array(16)));
   if (!saveOauthState(state)) {
     toast('Браузер блокирует хранение данных сайта, вход через Twitch невозможен. Отключите приватный режим или блокировщик.', 'err');
@@ -2780,10 +2784,10 @@ async function main() {
     auth = getAuth(app);
     db = getDatabase(app);
     try {
-  const snap = await get(ref(db, 'publicConfig/twitchClientId'));
-  const v = snap.val();
-  if (typeof v === 'string' && v.trim()) config.twitchClientId = v.trim();
-} catch { /* */ }
+      const snap = await get(ref(db, 'publicConfig/twitchClientId'));
+      const v = snap.val();
+      if (typeof v === 'string' && v.trim()) config.twitchClientId = v.trim();
+    } catch { /* бот ещё не записал publicConfig или нет доступа */ }
   } catch (e) {
     console.error(e);
     showFatal('Не удалось запустить Firebase: проверьте значения в config.js.');

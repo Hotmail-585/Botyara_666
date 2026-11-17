@@ -1,5 +1,6 @@
 // ЕДИНСТВЕННЫЙ файл, который нужно отредактировать: впишите свои значения вместо ВСТАВЬТЕ_...
 // Всё здесь публично (в браузере всё равно видно). Секретов здесь быть не должно.
+// Настоящие секреты (HenrikDev, токены Twitch, Telegram, Firebase Admin) живут только в .env бота.
 
 export const config = {
   // Firebase Console → ⚙ Project settings → General → Your apps → Web app → SDK setup and configuration
@@ -11,7 +12,9 @@ firebase: {
     appId: '1:123064665877:web:3e4592412ed36ad4260b1c',
   },
 
-  // Twitch Developer Console → ваше приложение → Client ID
+  // Twitch Client ID сюда вписывать НЕ нужно: бот берёт TWITCH_CLIENT_ID из своего .env и
+  // кладёт его в базу (publicConfig/twitchClientId), сайт читает его оттуда при запуске.
+  // Поле оставлено пустым как запасное значение.
   twitchClientId: '',
 
   // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
@@ -27,8 +30,8 @@ firebase: {
   // Сколько секунд ждать ответа бота после входа через Twitch.
   linkTimeoutSec: 15,
 
-  // Страница «Музыка» (music.html): ключ YouTube Data API v3, нужен только для плейлистов.
-  // Google Cloud Console → APIs → YouTube Data API v3 → Credentials → API key (ограничьте его адресом сайта).
-  // Пусто = заказ отдельных треков работает, плейлисты — нет.
+  // Ключ YouTube Data API v3 (плейлисты на странице «Музыка») тоже вписывать сюда не нужно:
+  // бот берёт YOUTUBE_API_KEY из своего .env и кладёт его в publicConfig/youtubeApiKey.
+  // Ограничьте ключ в Google Cloud Console адресом сайта (HTTP referrer): в браузере он всё равно виден.
   youtubeApiKey: '',
 };

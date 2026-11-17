@@ -195,16 +195,6 @@ $('themeBtn').onclick = () => {
   try { localStorage.setItem('bot_theme', next); } catch (e) { /* */ }
 };
 
-  const clientIdReady = get(ref(db, 'publicConfig')).then((s) => {
-  const pub = s.val() || {};
-  if (typeof pub.twitchClientId === 'string' && /^[a-z0-9]{20,40}$/i.test(pub.twitchClientId)) {
-    CLIENT_ID = pub.twitchClientId;
-  }
-  if (typeof pub.youtubeApiKey === 'string' && pub.youtubeApiKey.trim().length > 10) {
-    YT_KEY = pub.youtubeApiKey.trim();
-  }
-}).catch(() => {});
-  
 const app = initializeApp(config.firebase);
 const auth = getAuth(app);
 const db = getDatabase(app);
