@@ -6,6 +6,7 @@ const SESSION_KEY = 'bot_session';
 
 let apiUrl = '';
 let session = null;           // { session, uid, login, exp }
+let playerKey = '';           // ключ плеера (ссылка для OBS): даёт доступ к musicPlayer/{ключ} без входа
 let ws = null;                // активный транспорт: { send(msg), close() }
 let state = 'idle';           // idle | connecting | open
 let everOpened = false;
@@ -70,6 +71,7 @@ function connect() {
     wsFails = 0;
     backoff = 1000;
     if (session) ws.send({ t: 'auth', token: session.session });
+    if (playerKey) ws.send({ t: 'key', key: playerKey });
     for (const [id, s] of subs) ws.send({ t: 'sub', id, path: s.path });
     for (const w of openWaiters.splice(0)) w();
   }, (wasOpen) => {
@@ -170,6 +172,14 @@ export function ref(_db, path = '') { return { path: String(path).replace(/^\/+|
 export function serverTimestamp() { return { '.sv': 'timestamp' }; }
 
 export function onValue(r, cb, errCb) {
+  let once = false;
+  if (errCb && typeof errCb === 'object') { once = errCb.onlyOnce === true; errCb = undefined; }
+  if (once) {
+    let off = () => {};
+    let done = false;
+    off = onValue(r, (snap) => { if (done) return; done = true; Promise.resolve().then(() => off()); cb(snap); });
+    return () => { done = true; off(); };
+  }
   const id = nextId('s');
   const entry = { path: r.path, cb, errCb };
   if (r.path === '.info/serverTimeOffset') {
@@ -201,4 +211,50 @@ export async function runTransaction(r, mutator) {
     current = res.current === undefined ? null : res.current;
   }
   return { committed: false };
+}
+
+// Один раз прочитать значение.
+export async function get(r) {
+  const res = await request({ t: 'get', path: r.path });
+  const v = res.value === undefined ? null : res.value;
+  return { val: () => v, exists: () => v != null };
+}
+
+export async function remove(r) { return set(r, null); }
+
+// Как push() в Firebase: ключ создаётся на клиенте и сортируется по времени.
+const PUSH_CHARS = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz';
+let lastPush = 0;
+let lastRand = [];
+function pushId() {
+  let t = Date.now() + serverOffset;
+  const dup = t === lastPush;
+  lastPush = t;
+  let head = '';
+  for (let i = 0; i < 8; i++) { head = PUSH_CHARS.charAt(t % 64) + head; t = Math.floor(t / 64); }
+  if (!dup) lastRand = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b % 64);
+  else { let i = 11; for (; i >= 0 && lastRand[i] === 63; i--) lastRand[i] = 0; if (i >= 0) lastRand[i] += 1; }
+  return head + lastRand.map((n) => PUSH_CHARS.charAt(n)).join('');
+}
+export function push(r, value) {
+  const child = { path: r.path ? `${r.path}/${pushId()}` : pushId() };
+  child.key = child.path.split('/').pop();
+  const p = value === undefined ? Promise.resolve() : set(child, value);
+  const out = p.then(() => child);
+  out.key = child.key;
+  out.path = child.path;
+  return out;
+}
+
+// Ключ плеера для OBS-страниц (без входа через Twitch).
+export function setPlayerKey(k) {
+  playerKey = String(k || '');
+  if (state === 'open' && playerKey) ws.send({ t: 'key', key: playerKey });
+}
+
+// Публичные настройки, которые бот сам отдаёт сайту (Client ID Twitch, ник бота, ключ YouTube).
+export async function getPublicConfig() {
+  const res = await fetch(`${apiUrl}/public-config`, { cache: 'no-store' });
+  if (!res.ok) throw apiError(`http_${res.status}`, 'Бот не отдал настройки');
+  return res.json();
 }

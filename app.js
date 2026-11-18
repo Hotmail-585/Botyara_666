@@ -1,7 +1,7 @@
 // Кабинет Twitch-бота. Чистый JS-модуль, без сборки. Данные приходят с сервера бота (fb.js), Firebase не используется.
 import {
   initApi, ref, onValue, set, update, runTransaction, serverTimestamp,
-  loginWithTwitch, currentSession, logoutSession, onSessionChange,
+  loginWithTwitch, currentSession, logoutSession, onSessionChange, getPublicConfig,
 } from './fb.js';
 
 import { config } from './config.js';
@@ -219,12 +219,27 @@ function channelRef() { return ref(db, `channels/${S.active}`); }
 
 // ---------- Настройки и запуск ----------
 
+// Адрес бота — единственное, что нужно вписать в config.js. Client ID Twitch, ник бота и ключ YouTube сайт берёт у бота сам.
+const PUB = { twitchClientId: String(config.twitchClientId || ''), botName: String(config.botName || ''), youtubeApiKey: '' };
+
 function configProblem() {
-  const needed = [config.apiUrl, config.twitchClientId];
-  if (needed.some((v) => !v || String(v).includes('ВСТАВЬТЕ'))) {
-    return 'Сайт ещё не настроен: откройте файл config.js и впишите apiUrl (адрес бота) и Twitch Client ID.';
+  if (!config.apiUrl || String(config.apiUrl).includes('ВСТАВЬТЕ')) {
+    return 'Сайт ещё не настроен: откройте файл config.js и впишите apiUrl (адрес бота).';
   }
   return null;
+}
+
+async function loadPublicConfig() {
+  try {
+    const c = await getPublicConfig();
+    if (typeof c.twitchClientId === 'string' && /^[a-z0-9]{20,40}$/i.test(c.twitchClientId)) PUB.twitchClientId = c.twitchClientId;
+    if (typeof c.botName === 'string' && /^[A-Za-z0-9_]{3,25}$/.test(c.botName)) PUB.botName = c.botName;
+    if (typeof c.youtubeApiKey === 'string') PUB.youtubeApiKey = c.youtubeApiKey;
+    return true;
+  } catch (e) {
+    console.error(e);
+    return false;
+  }
 }
 
 function redirectUri() {
@@ -253,7 +268,7 @@ function startLogin() {
     return;
   }
   location.href = buildTwitchAuthUrl({
-    clientId: config.twitchClientId,
+    clientId: PUB.twitchClientId,
     redirectUri: redirectUri(),
     state,
   });
@@ -280,7 +295,7 @@ function consumeTwitchReturn() {
 function loginErrorText(e) {
   const code = String(e?.code || '');
   if (code === 'unavailable') return 'Нет связи с сервером бота. Возможно, бот сейчас выключен. Попробуйте позже.';
-  if (code === 'wrong_app') return 'Вход выполнен через другое приложение Twitch. Проверьте Client ID в config.js и в .env бота.';
+  if (code === 'wrong_app') return 'Вход выполнен через другое приложение Twitch. Проверьте TWITCH_CLIENT_ID в .env бота: сайт берёт Client ID у бота.';
   if (code === 'invalid_token' || code === 'bad_token') return 'Twitch не подтвердил вход. Попробуйте войти ещё раз.';
   if (code === 'rate_limited') return 'Слишком много попыток входа. Подождите минуту.';
   return 'Не удалось войти: ' + (code || e?.message || 'неизвестная ошибка');
@@ -333,7 +348,7 @@ function subscribeUser() {
     (err) => {
       console.error(err);
       if (!S || S.id !== sid) return;
-      showFatal('Нет доступа к базе данных: ' + (err?.code || err?.message) + '. Проверьте правила базы и адрес databaseURL в config.js.');
+      showFatal('Нет доступа к базе данных: ' + (err?.code || err?.message) + '. Проверьте, что бот запущен и обновлён.');
     },
   );
 }
@@ -603,7 +618,7 @@ function startPredConnect() {
       return;
     }
   }
-  location.href = buildTwitchCodeUrl({ clientId: config.twitchClientId, redirectUri: redirectUri(), state });
+  location.href = buildTwitchCodeUrl({ clientId: PUB.twitchClientId, redirectUri: redirectUri(), state });
 }
 
 // Отправляет боту код от Twitch или просьбу отключиться и ждёт ответ (predAuthRequests -> predAuthResults).
@@ -1149,7 +1164,7 @@ function endJoin() {
 }
 
 function renderModHint() {
-  const name = String(config.botName || '').replace(/[^A-Za-z0-9_]/g, '');
+  const name = String(PUB.botName || '').replace(/[^A-Za-z0-9_]/g, '');
   $('modCmd').textContent = '/mod ' + (name || 'имя_бота');
   $('modHint').hidden = !S?.showModHint || !isOwn();
 }
@@ -2606,8 +2621,8 @@ function updateCounter(textId, counterId) {
 }
 
 function fillBotName() {
-  if (!config.botName) return;
-  const name = String(config.botName).replace(/[^A-Za-z0-9_]/g, '');
+  if (!PUB.botName) return;
+  const name = String(PUB.botName).replace(/[^A-Za-z0-9_]/g, '');
   if (!name) return;
   for (const span of document.querySelectorAll('.botname')) {
     span.append(' (', el('a', { href: `https://www.twitch.tv/${name}`, target: '_blank', rel: 'noopener', text: name }), ')');
@@ -2701,6 +2716,15 @@ async function main() {
   if (predRet) { try { localStorage.setItem(PANEL_KEY, 'pred'); } catch { /* */ } }
 
   initApi(config.apiUrl);
+  fillBotName();
+  const gotPub = await loadPublicConfig();
+  fillBotName();
+  if (!PUB.twitchClientId) {
+    showFatal(gotPub
+      ? 'Бот не передал сайту Client ID Twitch: проверьте TWITCH_CLIENT_ID в файле .env бота и перезапустите бота.'
+      : 'Нет связи с ботом (' + config.apiUrl + '). Проверьте, что бот запущен и адрес apiUrl в config.js верный.');
+    return;
+  }
 
   // Сессия закончилась или отозвана сервером: возвращаем на экран входа
   onSessionChange((s) => { if (!s && S && S.uid) startSession(); });

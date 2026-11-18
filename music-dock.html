@@ -57,14 +57,16 @@
 
 <script type="module">
 import { config } from './config.js';
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
-import { getDatabase, ref, onValue, get, push, update, remove } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js';
+import { initApi, setPlayerKey, startConnection, ref, onValue, get, push, update, remove } from './fb.js';
 
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const key = new URLSearchParams(location.search).get('k') || '';
 if (!/^[A-Za-z0-9]{24,48}$/.test(key)) { document.body.innerHTML = '<div class="card err">В ссылке нет ключа (параметр k). Скопируйте ссылку на панель из кабинета.</div>'; throw new Error('no key'); }
-const db = getDatabase(initializeApp(config.firebase));
+initApi(config.apiUrl);
+setPlayerKey(key);
+startConnection();
+const db = null;
 const P = (sub) => ref(db, `musicPlayer/${key}/${sub}`);
 
 let queue = [], control = {}, state = {};

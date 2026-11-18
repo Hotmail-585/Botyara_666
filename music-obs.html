@@ -33,8 +33,7 @@
 
 <script type="module">
 import { config } from './config.js';
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
-import { getDatabase, ref, onValue, set, push, update, remove } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js';
+import { initApi, setPlayerKey, startConnection, ref, onValue, set, push, update, remove } from './fb.js';
 
 const $ = (id) => document.getElementById(id);
 const key = new URLSearchParams(location.search).get('k') || '';
@@ -46,8 +45,10 @@ function showMsg(text, info) {
 }
 if (!/^[A-Za-z0-9]{24,48}$/.test(key)) { showMsg('В ссылке нет ключа плеера (параметр k). Скопируйте ссылку из кабинета.'); throw new Error('no key'); }
 
-const app = initializeApp(config.firebase);
-const db = getDatabase(app);
+initApi(config.apiUrl);
+setPlayerKey(key);
+startConnection();
+const db = null;
 const P = (sub) => ref(db, `musicPlayer/${key}/${sub}`);
 
 let items = [];          // очередь по времени добавления
