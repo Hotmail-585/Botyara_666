@@ -27,6 +27,7 @@
       <symbol id="i-coin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M9.5 9.5h4a1.5 1.5 0 0 1 0 3h-3a1.5 1.5 0 0 0 0 3h4"/></symbol>
       <symbol id="i-crystal" viewBox="0 0 24 24"><path d="M12 2l9 10-9 10L3 12z"/><path d="M3 12h18"/></symbol>
       <symbol id="i-cart" viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 12.4a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6"/></symbol>
+      <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
       <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><circle cx="17" cy="9" r="2.5"/><path d="M17.5 14.5a5 5 0 0 1 4 5.5"/></symbol>
       <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></symbol>
       <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z"/></symbol>
@@ -190,13 +191,13 @@
           <button class="navbtn" type="button" data-nav="commands"><svg class="ico" aria-hidden="true"><use href="#i-chat"/></svg><span>Команды</span></button>
           <button class="navbtn" type="button" data-nav="timers"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><span>Авто-сообщения</span></button>
           <button class="navbtn" type="button" data-nav="filters"><svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg><span>Фильтры</span></button>
-          <button class="navbtn" type="button" data-nav="https://hotmail-585.github.io/Botyara_666/music.html"><svg class="ico" aria-hidden="true"><use href="#i-node"/></svg><span>Музыка</span></button>
           <div class="navgroup">Зрители</div>
           <button class="navbtn" type="button" data-nav="games"><svg class="ico" aria-hidden="true"><use href="#i-dice"/></svg><span>Игры</span></button>
           <button class="navbtn" type="button" data-nav="points"><svg class="ico" aria-hidden="true"><use href="#i-coin"/></svg><span>Очки</span></button>
           <button class="navbtn" type="button" data-nav="pred"><svg class="ico" aria-hidden="true"><use href="#i-crystal"/></svg><span>Предсказания</span></button>
           <button class="navbtn" type="button" data-nav="shop"><svg class="ico" aria-hidden="true"><use href="#i-cart"/></svg><span>Магазин</span><span id="shopBadge" class="badge" hidden></span></button>
           <div id="navGroupManage" class="navgroup">Управление</div>
+          <button class="navbtn" type="button" data-nav="music" hidden><svg class="ico" aria-hidden="true"><use href="#i-music"/></svg><span>Музыка</span></button>
           <button class="navbtn" type="button" data-nav="mods"><svg class="ico" aria-hidden="true"><use href="#i-users"/></svg><span>Модераторы</span></button>
         </nav>
 
@@ -500,6 +501,7 @@
             <div class="card">
               <h2>Что умеют игры</h2>
               <ul class="plain">
+                <li><code>!игры</code> (или <code>!gamelist</code>): показывает зрителям список всех игровых команд канала.</li>
                 <li><code>!8ball вопрос</code>: «магический шар» отвечает случайной фразой.</li>
                 <li><code>!dice</code>, <code>!dice d20</code>: бросок кубика (по умолчанию d6, граней от 2 до 1000).</li>
                 <li><code>!coin</code>: орёл или решка.</li>
@@ -655,6 +657,114 @@
         <p id="modError" class="error" hidden></p>
       </div>
 
+          </div>
+
+          <!-- Музыка (только владелец канала) -->
+          <div id="panel-music" class="panel" data-panel="music" hidden>
+            <div id="mu-gate" class="card">Загрузка…</div>
+            <div id="mu-app" hidden>
+              <nav id="mu-tabs" class="mu-tabs"></nav>
+              <section id="mu-s-conn" class="mu-sec">
+                    <div class="card">
+                      <h2>1. Плеер для OBS (звук и виджет на стриме)</h2>
+                      <p class="mute">В OBS: источник «Браузер», вставьте ссылку, ширина 460, высота 300, включите «Управлять звуком через OBS». Ссылка секретная: не показывайте её в эфире. Плеер должен быть открыт, пока играет музыка.</p>
+                      <div class="row"><code id="mu-obsUrl" style="flex:1"></code><button class="b g" data-copy="obsUrl">Копировать</button></div>
+                      <div class="row"><button class="b g" id="mu-newKey">Выдать новые ссылки</button><span class="mute">старые перестанут работать, очередь сбросится</span></div>
+                    </div>
+                    <div class="card">
+                      <h2>2. Панель управления внутри OBS</h2>
+                      <p class="mute">В OBS: меню «Док-панели» → «Пользовательские док-панели браузера…», имя «Музыка», вставьте ссылку. Появится вкладка с кнопками: назад, играть, пауза, стоп, вперёд, громкость, очередь и баны.</p>
+                      <div class="row"><code id="mu-dockUrl" style="flex:1"></code><button class="b g" data-copy="dockUrl">Копировать</button></div>
+                    </div>
+                    <div class="card">
+                      <h2>3. Приём заказов (бот)</h2>
+                      <p class="mute">Бот сам создаёт награду за баллы канала, принимает заказы и проверяет видео, страница при этом может быть закрыта. Нужен статус партнёра или компаньона Twitch. Бот получит только право управлять наградами.</p>
+                      <div class="row"><span><span class="dot" id="mu-tdot"></span><span id="mu-tstat">проверка…</span></span><button class="b" id="mu-tbtn">Подключить Twitch</button></div>
+                      <div class="mute" id="mu-tmsg"></div>
+                      <div class="mute" id="mu-rstat" style="margin-top:6px"></div>
+                    </div>
+                  </section>
+
+                  <section id="mu-s-queue" class="mu-sec">
+                    <div class="card">
+                      <h2>Сейчас</h2>
+                      <div id="mu-now" class="mute">—</div>
+                      <div class="row">
+                        <button class="b g" id="mu-bPrev">⏮ Назад</button><button class="b" id="mu-bPlay">▶ Играть</button><button class="b g" id="mu-bPause">⏸ Пауза</button><button class="b g" id="mu-bStop">⏹ Стоп</button><button class="b g" id="mu-bSkip">⏭ Вперёд</button>
+                      </div>
+                      <div class="row"><button class="b g" id="mu-bBack10">⏪ −10 с</button><button class="b g" id="mu-bFwd10">+10 с ⏩</button><button class="b g" id="mu-bRestart">↺ Сначала</button>
+                        <label class="mute">Громкость <input type="range" id="mu-vol" min="0" max="100" style="vertical-align:middle"></label></div>
+                    </div>
+                    <div class="card">
+                      <h2>Добавить вручную</h2>
+                      <div class="row"><input type="text" id="mu-manual" placeholder="Ссылка на YouTube"><button class="b" id="mu-manualAdd">Добавить</button></div>
+                      <div class="mute" id="mu-manualSt"></div>
+                    </div>
+                    <div class="card"><h2>Очередь</h2><div id="mu-queue" class="mute">пусто</div></div>
+                    <div class="card"><h2>Журнал заказов</h2><div id="mu-orders" class="mute">пока нет</div></div>
+                  </section>
+
+                  <section id="mu-s-set" class="mu-sec">
+                    <div class="card">
+                      <h2>Награды за баллы канала</h2>
+                      <p class="mute">Бот создаёт награды сам и обновляет название и цену при сохранении. Пустое название = награда выключена. Награды, созданные вручную в Twitch, бот не обрабатывает (Twitch разрешает управлять заказами только создателю награды).</p>
+                      <div class="row"><label style="width:170px">Заказ трека</label><input type="text" id="mu-cfgTrack" placeholder="Заказать песню"><input type="number" id="mu-cfgTrackCost" min="1" style="max-width:110px" title="Цена в баллах"></div>
+                      <div class="row"><label style="width:170px">Заказ плейлиста</label><input type="text" id="mu-cfgPl" placeholder="необязательно"><input type="number" id="mu-cfgPlCost" min="1" style="max-width:110px" title="Цена в баллах"></div>
+                      <div class="row"><label style="width:170px">Треков из плейлиста</label><input type="number" id="mu-cfgMaxPl" min="1" max="50"></div>
+                    </div>
+                    <div class="card">
+                      <h2>Что не пропускать</h2>
+                      <div class="row"><label><input type="checkbox" id="mu-cfgAge"> видео с возрастным ограничением 18+ (YouTube)</label></div>
+                      <div class="row"><label><input type="checkbox" id="mu-cfgEmb"> видео, которые нельзя встроить (в OBS они всё равно не играют)</label></div>
+                      <div class="row"><label style="width:260px">Максимальная длительность, мин (0 = без лимита)</label><input type="number" id="mu-cfgDur" min="0" max="600" style="max-width:110px"></div>
+                      <div class="row"><label style="width:260px">Макс. треков в очереди</label><input type="number" id="mu-cfgMaxQ" min="1" max="200" style="max-width:110px"></div>
+                      <div class="row"><label style="width:260px">Макс. треков от одного зрителя</label><input type="number" id="mu-cfgMaxU" min="1" max="50" style="max-width:110px"></div>
+                      <div class="row"><label><input type="checkbox" id="mu-cfgChat"> отвечать в чате («добавлено» / «отклонено: причина, баллы возвращены»)</label></div>
+                      <p class="mute">Отклонённый заказ отменяется, и Twitch возвращает баллы зрителю. Отметка 18+ берётся с YouTube: если видео не помечено возрастным ограничением, бот его не отличит.</p>
+                      <button class="b" id="mu-cfgSave">Сохранить</button> <span id="mu-cfgSt" class="mute"></span>
+                    </div>
+                    <div class="card">
+                      <h2>Вид виджета в OBS</h2>
+                      <div class="row"><label>Акцент</label><input type="color" id="mu-wAcc"><label>Фон</label><input type="color" id="mu-wBg"><label>Текст</label><input type="color" id="mu-wText"></div>
+                      <div class="row"><label style="width:170px">Прозрачность фона, %</label><input type="number" id="mu-wOp" min="0" max="100"></div>
+                      <div class="row"><label style="width:200px">Строк в списке очереди (0–10)</label><input type="number" id="mu-wNext" min="0" max="10" style="max-width:110px"></div>
+                      <div class="row"><label><input type="checkbox" id="mu-wFrom"> показывать ник заказавшего</label></div>
+                      <div class="row"><label><input type="checkbox" id="mu-wThumb"> показывать обложки</label></div>
+                      <div class="row"><label><input type="checkbox" id="mu-wHide"> скрывать виджет, когда очередь пуста</label></div>
+                      <button class="b" id="mu-wSave">Сохранить</button> <span id="mu-wSt" class="mute"></span>
+                    </div>
+                  </section>
+
+                  <section id="mu-s-pl" class="mu-sec">
+                    <div class="card">
+                      <h2>Мои плейлисты (играют, когда очередь пуста)</h2>
+                      <div class="row">
+                        <button class="b g" data-mode="off">Выкл</button><button class="b g" data-mode="order">По порядку</button><button class="b g" data-mode="shuffle">Вперемешку</button>
+                      </div>
+                      <div class="row"><input type="text" id="mu-plUrl" placeholder="Ссылка на плейлист YouTube (…list=…)"><button class="b" id="mu-plAdd">Добавить</button></div>
+                      <div class="mute" id="mu-plSt"></div>
+                      <div id="mu-plList"></div>
+                    </div>
+                  </section>
+
+                  <section id="mu-s-ban" class="mu-sec">
+                    <div class="card">
+                      <h2>Бан зрителей</h2>
+                      <div class="row"><input type="text" id="mu-banU" placeholder="ник зрителя"><button class="b" id="mu-banUAdd">Забанить</button></div>
+                      <div id="mu-banUList"></div>
+                    </div>
+                    <div class="card">
+                      <h2>Бан треков</h2>
+                      <div class="row"><input type="text" id="mu-banT" placeholder="ссылка на видео или его ID"><button class="b" id="mu-banTAdd">Забанить</button></div>
+                      <div id="mu-banTList"></div>
+                    </div>
+                    <p class="mute">Банить можно и прямо из очереди (здесь или в панели внутри OBS).</p>
+                  </section>
+
+                  <section id="mu-s-hist" class="mu-sec">
+                    <div class="card"><h2>История</h2><div id="mu-hist" class="mute">пока пусто</div></div>
+                  </section>
+            </div>
           </div>
         </div>
       </div>

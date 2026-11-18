@@ -6,6 +6,7 @@ import {
 
 import { config } from './config.js';
 import { CHANGELOG } from './changelog.js';
+import { initMusic, consumeMusicReturn } from './music-ui.js';
 import { QUICK, answer as assistAnswer } from './assistant.js';
 import {
   LIMITS, TOKEN_PATTERN,
@@ -27,7 +28,7 @@ const PRED_STATE_KEY = 'twitch_pred_state';
 const TAB_KEY = 'bot_tab';
 const BASE_TITLE = document.title;
 const PANEL_KEY = 'bot_panel';
-const PANELS = ['overview', 'stats', 'valorant', 'commands', 'timers', 'filters', 'games', 'points', 'pred', 'shop', 'mods'];
+const PANELS = ['overview', 'stats', 'valorant', 'commands', 'timers', 'filters', 'games', 'points', 'pred', 'shop', 'music', 'mods'];
 const ADMIN_TICK_MS = 15 * 1000;
 const PERM_HINT = 'Сервер отклонил действие. Проверьте, что бот обновлён до последней версии (файл database.rules.json) и что ваш ник есть в ADMINS бота.';
 const LIMIT_FIELDS = [
@@ -41,6 +42,7 @@ const db = null;   // оставлен для совместимости выз�
 
 // Состояние текущей сессии (сбрасывается при выходе)
 let S = null;
+let musicRet = null;   // ответ Twitch для вкладки «Музыка» (после возврата с авторизации)
 function freshState() {
   return {
     id: Date.now() + Math.random(),
@@ -1738,17 +1740,22 @@ function renderDashboard() {
 // ---------- Меню кабинета ----------
 
 function showPanel(name) {
-  if (!PANELS.includes(name) || (name === 'mods' && !isOwn())) name = 'overview';
+  if (!PANELS.includes(name) || ((name === 'mods' || name === 'music') && !isOwn())) name = 'overview';
   S.panel = name;
   for (const p of document.querySelectorAll('.panel')) p.hidden = p.dataset.panel !== name;
   for (const b of document.querySelectorAll('.navbtn')) {
     if (b.dataset.nav === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
   $('sideNav').querySelector('[data-nav="mods"]').hidden = !isOwn();
+  $('sideNav').querySelector('[data-nav="music"]').hidden = !isOwn();
   $('navGroupManage').hidden = !isOwn();
   if (name === 'points' || name === 'overview') { ensurePointsSub(); renderLeaders(); }
   if (name === 'pred') { ensurePredSub(); renderPred(); }
   if (name === 'stats') { ensureStatsSub(); renderChatStats(); }
+  if (name === 'music' && S.nick) {
+    initMusic({ uid: S.uid, nick: S.nick, redirect: redirectUri(), ret: musicRet });
+    musicRet = null;
+  }
 }
 
 function onNavClick(name) {
@@ -2714,6 +2721,8 @@ async function main() {
   const ret = consumeTwitchReturn(); // сразу убирает токен из адресной строки
   const predRet = consumePredReturn(); // и код предсказаний (после возврата с Twitch)
   if (predRet) { try { localStorage.setItem(PANEL_KEY, 'pred'); } catch { /* */ } }
+  musicRet = consumeMusicReturn();
+  if (musicRet) { try { localStorage.setItem(PANEL_KEY, 'music'); } catch { /* */ } }
 
   initApi(config.apiUrl);
   fillBotName();
@@ -2736,6 +2745,7 @@ async function main() {
   }
   await startSession();
   if (loginMessage) toast(loginMessage, 'err');
+  if (musicRet && !S?.uid) { toast('Сессия не найдена. Войдите и подключите музыку ещё раз.', 'err'); musicRet = null; }
   if (predRet) {
     if (predRet.message) toast(predRet.message, 'err');
     else if (S?.uid) onPredConnectCode(predRet.code);
