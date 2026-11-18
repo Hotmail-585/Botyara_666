@@ -3,7 +3,7 @@
 
 export const config = {
   // Адрес API бота (HTTPS-домен вашего хостинга: bot-hosting.net → Domains). Без слеша в конце.
-  apiUrl: 'https://botyara.apps.bot-hosting.cloud',
+  apiUrl: 'https://c06poca4kr.apps.bot-hosting.cloud',
 
   // Twitch Developer Console → ваше приложение → Client ID
   twitchClientId: '',
