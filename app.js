@@ -1,12 +1,8 @@
-// Кабинет Twitch-бота. Чистый JS-модуль, без сборки.
-// Версия Firebase JS SDK зафиксирована в импортах ниже (одна и та же во всех трёх).
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-app.js';
+// Кабинет Twitch-бота. Чистый JS-модуль, без сборки. Данные приходят с сервера бота (fb.js), Firebase не используется.
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut,
-} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-auth.js';
-import {
-  getDatabase, ref, onValue, get, set, update, runTransaction, serverTimestamp,
-} from 'https://www.gstatic.com/firebasejs/12.19.0/firebase-database.js';
+  initApi, ref, onValue, set, update, runTransaction, serverTimestamp,
+  loginWithTwitch, currentSession, logoutSession, onSessionChange,
+} from './fb.js';
 
 import { config } from './config.js';
 import { CHANGELOG } from './changelog.js';
@@ -25,7 +21,7 @@ import {
 } from './validation.js';
 
 const $ = (id) => document.getElementById(id);
-const VIEWS = ['loading', 'error', 'login', 'connect', 'linking', 'linkfail', 'nochannel', 'dashboard', 'admin'];
+const VIEWS = ['loading', 'error', 'login', 'linking', 'linkfail', 'nochannel', 'dashboard', 'admin'];
 const STATE_KEY = 'twitch_oauth_state';
 const PRED_STATE_KEY = 'twitch_pred_state';
 const TAB_KEY = 'bot_tab';
@@ -33,7 +29,7 @@ const BASE_TITLE = document.title;
 const PANEL_KEY = 'bot_panel';
 const PANELS = ['overview', 'stats', 'valorant', 'commands', 'timers', 'filters', 'games', 'points', 'pred', 'shop', 'mods'];
 const ADMIN_TICK_MS = 15 * 1000;
-const PERM_HINT = 'Сервер отклонил действие. Проверьте, что в Firebase опубликованы новые правила (database.rules.json) и что ваш ник есть в ADMINS бота.';
+const PERM_HINT = 'Сервер отклонил действие. Проверьте, что бот обновлён до последней версии (файл database.rules.json) и что ваш ник есть в ADMINS бота.';
 const LIMIT_FIELDS = [
   ['limMaxChannels', 'maxChannels'],
   ['limMaxCommands', 'maxCommands'],
@@ -41,8 +37,7 @@ const LIMIT_FIELDS = [
   ['limInactiveDays', 'inactiveDays'],
 ];
 
-let auth = null;
-let db = null;
+const db = null;   // оставлен для совместимости вызовов ref(db, ...)
 
 // Состояние текущей сессии (сбрасывается при выходе)
 let S = null;
@@ -50,7 +45,7 @@ function freshState() {
   return {
     id: Date.now() + Math.random(),
     uid: null,
-    email: '',                 // почта аккаунта Google (для подписи, пока Twitch не привязан)
+    email: '',                 // ник Twitch из сессии (для подписи)
     nick: null,
     channel: undefined,        // undefined = ещё не загружен, null = канала нет
     pendingToken: null,
@@ -117,8 +112,8 @@ function showView(name) {
   currentView = name;
   for (const v of VIEWS) $('view-' + v).hidden = v !== name;
   const inCabinet = name === 'dashboard' || name === 'nochannel' || name === 'admin';
-  $('userbox').hidden = !(name === 'connect' || (inCabinet && S?.nick));
-  $('unlinkBtn').hidden = !S?.nick;
+  $('userbox').hidden = !(inCabinet && S?.nick);
+  $('unlinkBtn').hidden = true;
   $('tabs').hidden = !(inCabinet && S?.isAdmin && S?.nick);
   $('main').classList.toggle('wide', name === 'admin');
   $('main').classList.toggle('wide-cab', name === 'dashboard');
@@ -200,7 +195,7 @@ function friendlyError(e, permHint) {
   const code = String(e?.code || '');
   const msg = String(e?.message || '');
   if (/permission_denied/i.test(code + msg)) {
-    return permHint || 'Сервер не принял изменение. Возможно, бот отключён от канала (!leave) или данные не прошли проверку. Если вы только что обновляли сайт, проверьте, что в Firebase опубликованы новые правила (database.rules.json).';
+    return permHint || 'Сервер не принял изменение. Возможно, бот отключён от канала (!leave) или данные не прошли проверку. Если вы только что обновляли сайт, проверьте, что бот тоже обновлён.';
   }
   if (/network|unavailable|offline|disconnected/i.test(code + msg)) {
     return 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.';
@@ -225,10 +220,9 @@ function channelRef() { return ref(db, `channels/${S.active}`); }
 // ---------- Настройки и запуск ----------
 
 function configProblem() {
-  const f = config.firebase || {};
-  const needed = [f.apiKey, f.authDomain, f.databaseURL, f.projectId, f.appId];
+  const needed = [config.apiUrl, config.twitchClientId];
   if (needed.some((v) => !v || String(v).includes('ВСТАВЬТЕ'))) {
-    return 'Сайт ещё не настроен: откройте файл config.js и впишите значения Firebase (Twitch Client ID и ключ YouTube приходят от бота).';
+    return 'Сайт ещё не настроен: откройте файл config.js и впишите apiUrl (адрес бота) и Twitch Client ID.';
   }
   return null;
 }
@@ -253,10 +247,6 @@ function takeOauthState() {
 }
 
 function startLogin() {
-  if (!config.twitchClientId) {
-    toast('Бот ещё не передал сайту Twitch Client ID. Проверьте TWITCH_CLIENT_ID в .env бота и перезапустите его.', 'err');
-    return;
-  }
   const state = makeState(crypto.getRandomValues(new Uint8Array(16)));
   if (!saveOauthState(state)) {
     toast('Браузер блокирует хранение данных сайта, вход через Twitch невозможен. Отключите приватный режим или блокировщик.', 'err');
@@ -287,76 +277,30 @@ function consumeTwitchReturn() {
   return { token: p.accessToken, message: null };
 }
 
-function authErrorText(e) {
+function loginErrorText(e) {
   const code = String(e?.code || '');
-  if (/operation-not-allowed|admin-restricted/.test(code)) {
-    return 'В Firebase не включён вход через Google. Откройте Authentication → Sign-in method и включите «Google».';
-  }
-  if (/unauthorized-domain/.test(code)) {
-    return 'Адрес сайта не добавлен в Firebase: Authentication → Settings → Authorized domains.';
-  }
-  if (/network/.test(code)) return 'Нет связи с сервером. Проверьте интернет и обновите страницу.';
-  return 'Не удалось войти в Firebase: ' + (code || e?.message || 'неизвестная ошибка');
+  if (code === 'unavailable') return 'Нет связи с сервером бота. Возможно, бот сейчас выключен. Попробуйте позже.';
+  if (code === 'wrong_app') return 'Вход выполнен через другое приложение Twitch. Проверьте Client ID в config.js и в .env бота.';
+  if (code === 'invalid_token' || code === 'bad_token') return 'Twitch не подтвердил вход. Попробуйте войти ещё раз.';
+  if (code === 'rate_limited') return 'Слишком много попыток входа. Подождите минуту.';
+  return 'Не удалось войти: ' + (code || e?.message || 'неизвестная ошибка');
 }
 
-function currentUserOnce() {
-  return new Promise((resolve) => {
-    const off = onAuthStateChanged(auth, (u) => { off(); resolve(u); });
-  });
-}
-
-async function startSession(pendingToken = null) {
+async function startSession() {
   teardown();
   S = freshState();
-  S.pendingToken = pendingToken;
   showView('loading');
   $('loadingText').textContent = 'Загрузка…';
-  const sid = S.id;
-  let user;
-  try {
-    user = await currentUserOnce();
-  } catch (e) {
-    console.error(e);
-    showFatal(authErrorText(e));
-    return;
-  }
-  if (!S || S.id !== sid) return;
-  if (!user) {                       // не вошли через Google
-    S.pendingToken = null;
+  const user = currentSession();
+  if (!user) {
     showView('login');
-    if (pendingToken) toast('Сессия Google не найдена. Войдите через Google и привяжите Twitch ещё раз.', 'err');
     return;
   }
   S.uid = user.uid;
-  S.email = user.email || '';
+  S.email = user.login || '';
   $('userNick').textContent = S.email;
   subscribeUser();
   subscribeSupport();
-}
-
-async function startGoogleLogin() {
-  try {
-    await signInWithPopup(auth, new GoogleAuthProvider());
-  } catch (e) {
-    const code = String(e?.code || '');
-    if (/popup-closed-by-user|cancelled-popup-request/.test(code)) return;
-    console.error(e);
-    if (/popup-blocked/.test(code)) toast('Браузер заблокировал окно входа Google. Разрешите всплывающие окна для этого сайта.', 'err');
-    else toast(authErrorText(e), 'err');
-    return;
-  }
-  await startSession(null);
-}
-
-// Отвязка: пользователь сам удаляет свою связь с Twitch-каналом (правила разрешают только удаление своих записей).
-async function unlinkTwitch() {
-  if (!S?.nick) return;
-  if (!confirm(`Отвязать Twitch-канал ${S.nick} от этого входа Google?\n\nНастройки бота на канале останутся. Привязать Twitch можно будет снова.`)) return;
-  const { nick, uid } = S;
-  await save(
-    () => update(ref(db), { [`users/${uid}`]: null, [`links/${nick}/${uid}`]: null }),
-    'Twitch отвязан',
-  );
 }
 
 function teardown() {
@@ -427,29 +371,8 @@ function onUnlinked() {
     S.dirtyValorant = S.dirtyInterval = S.dirtyFilters = false;
     $('userNick').textContent = S.email;
   }
-  if (S.pendingToken) { sendLink(); return; }
-  if (!S.linking) showView('connect');
-}
-
-async function sendLink() {
-  const token = S.pendingToken;
-  S.pendingToken = null;
-  S.linking = true;
-  showView('linking');
-  const sid = S.id;
-  const fail = () => {
-    if (!S || S.id !== sid || S.nick) return;
-    S.linking = false;
-    showView('linkfail');
-  };
-  S.linkTimer = setTimeout(fail, (config.linkTimeoutSec || 15) * 1000);
-  try {
-    await set(ref(db, `linkRequests/${S.uid}`), { token, createdAt: serverTimestamp() });
-  } catch (e) {
-    console.error(e);
-    clearTimeout(S.linkTimer);
-    fail();
-  }
+  // Запись users/{uid} создаёт сервер при входе. Если её нет, сессия устарела: входим заново.
+  logoutSession();
 }
 
 // ---------- Канал ----------
@@ -709,7 +632,7 @@ async function sendPredRequest(payload, okText) {
       console.error(err);
       if (!S || S.id !== sid || S.predJob !== job) return;
       endPredJob();
-      setError('predError', friendlyError(err, 'Нет доступа к ответу бота. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'));
+      setError('predError', friendlyError(err, 'Нет доступа к ответу бота. Проверьте, что бот обновлён до последней версии (файл database.rules.json).'));
     },
   );
   job.timer = setTimeout(() => {
@@ -724,7 +647,7 @@ async function sendPredRequest(payload, okText) {
     console.error(e);
     if (S && S.id === sid && S.predJob === job) {
       endPredJob();
-      setError('predError', friendlyError(e, 'Сервер отклонил заявку. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'));
+      setError('predError', friendlyError(e, 'Сервер отклонил заявку. Проверьте, что бот обновлён до последней версии (файл database.rules.json).'));
     }
   }
 }
@@ -958,7 +881,7 @@ function renderSupport() {
     el('p', { text: 'Опишите проблему или вопрос. Сообщение придёт владельцу бота, а ответ появится здесь. Если вы закроете окно, на кнопке ассистента загорится красная точка.' }),
   ]);
   if (!S || !S.uid) {
-    add('sys', [document.createTextNode('Чтобы написать в поддержку, войдите в кабинет через Google.')]);
+    add('sys', [document.createTextNode('Чтобы написать в поддержку, войдите в кабинет через Twitch.')]);
     return;
   }
   for (const m of S.supportMsgs || []) {
@@ -1005,7 +928,7 @@ async function sendSupport(raw) {
     console.error(e);
     $('assistInput').value = text;
     growInput();
-    toast(friendlyError(e, 'Сервер отклонил сообщение. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'), 'err');
+    toast(friendlyError(e, 'Сервер отклонил сообщение. Проверьте, что бот обновлён до последней версии (файл database.rules.json).'), 'err');
   }
 }
 
@@ -1130,7 +1053,7 @@ function renderChatStats() {
     return;
   }
   if (d === null) {
-    $('chatTopEmpty').textContent = 'Нет доступа к статистике. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'; $('chatTopEmpty').hidden = false;
+    $('chatTopEmpty').textContent = 'Нет доступа к статистике. Проверьте, что бот обновлён до последней версии (файл database.rules.json).'; $('chatTopEmpty').hidden = false;
     return;
   }
   const nowMs = Date.now();
@@ -1273,7 +1196,7 @@ async function onJoinSubmit(ev) {
       console.error(err);
       if (!S || S.id !== sid || S.joining !== job) return;
       endJoin();
-      setError('jError', friendlyError(err, 'Нет доступа к ответу бота. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'));
+      setError('jError', friendlyError(err, 'Нет доступа к ответу бота. Проверьте, что бот обновлён до последней версии (файл database.rules.json).'));
     },
   );
   job.timer = setTimeout(() => {
@@ -1290,7 +1213,7 @@ async function onJoinSubmit(ev) {
     console.error(e);
     if (S && S.id === sid && S.joining === job) {
       endJoin();
-      setError('jError', friendlyError(e, 'Сервер отклонил заявку. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'));
+      setError('jError', friendlyError(e, 'Сервер отклонил заявку. Проверьте, что бот обновлён до последней версии (файл database.rules.json).'));
     }
   }
 }
@@ -2452,7 +2375,7 @@ async function sendTest(raw) {
     },
     (err) => {
       console.error(err);
-      done(friendlyError(err, 'Нет доступа к ответу бота. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'), 'err');
+      done(friendlyError(err, 'Нет доступа к ответу бота. Проверьте, что бот обновлён до последней версии (файл database.rules.json).'), 'err');
     },
   );
   timer = setTimeout(() => done('Бот не ответил. Возможно, он сейчас выключен.', 'err'), TEST_WAIT_MS);
@@ -2460,7 +2383,7 @@ async function sendTest(raw) {
     await set(ref(db, `testRequests/${uid}`), { id, text: t.value, channel: chan, createdAt: serverTimestamp() });
   } catch (e) {
     console.error(e);
-    done(friendlyError(e, 'Сервер отклонил запрос. Проверьте, что в Firebase опубликованы новые правила (database.rules.json).'), 'err');
+    done(friendlyError(e, 'Сервер отклонил запрос. Проверьте, что бот обновлён до последней версии (файл database.rules.json).'), 'err');
   }
 }
 
@@ -2668,9 +2591,9 @@ async function logout() {
   teardown();
   S = null;
   document.title = BASE_TITLE;
-  try { await signOut(auth); } catch (e) { console.error(e); }
+  logoutSession();
   $('userNick').textContent = '';
-  await startSession(null);
+  await startSession();
 }
 
 // ---------- Подсказки ----------
@@ -2700,9 +2623,7 @@ function bindUi() {
   $('statMode14').addEventListener('click', () => onStatMode('14d'));
   buildFilterForm();
 
-  $('googleBtn').addEventListener('click', startGoogleLogin);
-  $('connectBtn').addEventListener('click', startLogin);
-  $('unlinkBtn').addEventListener('click', unlinkTwitch);
+  $('loginBtn').addEventListener('click', startLogin);
   $('linkRetry').addEventListener('click', startLogin);
   $('errorRetry').addEventListener('click', () => location.reload());
   $('logoutBtn').addEventListener('click', logout);
@@ -2779,23 +2700,18 @@ async function main() {
   const predRet = consumePredReturn(); // и код предсказаний (после возврата с Twitch)
   if (predRet) { try { localStorage.setItem(PANEL_KEY, 'pred'); } catch { /* */ } }
 
-  try {
-    const app = initializeApp(config.firebase);
-    auth = getAuth(app);
-    db = getDatabase(app);
-    try {
-      const snap = await get(ref(db, 'publicConfig/twitchClientId'));
-      const v = snap.val();
-      if (typeof v === 'string' && v.trim()) config.twitchClientId = v.trim();
-    } catch { /* бот ещё не записал publicConfig или нет доступа */ }
-  } catch (e) {
-    console.error(e);
-    showFatal('Не удалось запустить Firebase: проверьте значения в config.js.');
-    return;
-  }
+  initApi(config.apiUrl);
 
-  await startSession(ret.token);
-  if (ret.message) toast(ret.message, 'err');
+  // Сессия закончилась или отозвана сервером: возвращаем на экран входа
+  onSessionChange((s) => { if (!s && S && S.uid) startSession(); });
+
+  let loginMessage = ret.message;
+  if (ret.token) {
+    $('loadingText').textContent = 'Входим…';
+    try { await loginWithTwitch(ret.token); } catch (e) { console.error(e); loginMessage = loginErrorText(e); }
+  }
+  await startSession();
+  if (loginMessage) toast(loginMessage, 'err');
   if (predRet) {
     if (predRet.message) toast(predRet.message, 'err');
     else if (S?.uid) onPredConnectCode(predRet.code);

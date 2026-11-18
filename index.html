@@ -13,20 +13,6 @@
   </script>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="admin.css">
-  <style>
-    /* Компактное меню кабинета на ПК: пунктов стало больше, лишняя полоса прокрутки не нужна */
-    @media (min-width: 861px) {
-      .side { padding: 8px; gap: 0; scrollbar-width: none; }
-      .side::-webkit-scrollbar { display: none; }
-      .side .navbtn { padding: 6px 12px; gap: 10px; font-size: .92rem; }
-      .side .navgroup { margin: 8px 10px 2px; }
-    }
-    /* Плитки на обзоре: компактнее, чтобы «Не подключены» умещалось в одну строку */
-    .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-    .stat { padding: 10px 14px; }
-    .stat .v { font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    @media (max-width: 700px) { .stats { grid-template-columns: 1fr 1fr; } }
-  </style>
   <script type="module" src="app.js"></script>
 </head>
 <body>
@@ -48,7 +34,6 @@
       <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="4"/><path d="M12 4v4M9 14h.01M15 14h.01"/><circle cx="12" cy="3" r="1"/></symbol>
       <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
       <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
-      <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></symbol>
       <symbol id="i-send" viewBox="0 0 24 24"><path d="M4 12l16-8-6 16-2-6z"/></symbol>
     </defs>
   </svg>
@@ -65,7 +50,7 @@
       </div>
       <div id="userbox" class="userbox" hidden>
         <span id="userNick" class="usernick"></span>
-        <button id="unlinkBtn" class="btn ghost small" type="button" hidden>Отвязать Twitch</button>
+        <button id="unlinkBtn" class="btn ghost small" type="button" hidden></button>
         <button id="logoutBtn" class="btn ghost small" type="button">Выйти</button>
       </div>
     </div>
@@ -109,8 +94,8 @@
       <div class="card hero">
         <h1>Управляйте ботом на своём канале</h1>
         <p class="muted">Ранг Valorant в чате, свои команды и авто-сообщения: всё настраивается здесь, а изменения сразу попадают в бота.</p>
-        <button id="googleBtn" class="btn primary google" type="button">Войти через Google</button>
-        <p class="hint">Google нужен только как ключ от кабинета: так вы заходите с любого устройства. Затем вы один раз привяжете Twitch, и сайт узнает только ваш Twitch-ник. Доступ к аккаунтам и пароли ему не нужны.</p>
+        <button id="loginBtn" class="btn twitch" type="button">Войти через Twitch</button>
+        <p class="hint">Сайт узнает только ваш Twitch-ник. Пароль и доступ к аккаунту ему не нужны. Вход запоминается в этом браузере, на другом устройстве достаточно войти так же.</p>
       </div>
 
       <div class="card">
@@ -123,7 +108,7 @@
             Здесь <em>Ник#Тег</em>: ваш аккаунт Valorant, а <em>eu</em>: регион (eu, na, ap или kr).
             Например: <code>!join Player#1234 eu</code>
           </li>
-          <li><strong>Нажмите «Войти через Google»</strong> на этой странице, затем «Привязать Twitch». Кабинет откроется, как только бот увидит вашу привязку.</li>
+          <li><strong>Нажмите «Войти через Twitch»</strong> на этой странице. Кабинет откроется сразу после входа.</li>
           <li><strong>Настройте всё здесь:</strong> аккаунт Valorant, команды и авто-сообщения.</li>
         </ol>
         <details>
@@ -146,14 +131,6 @@
           <p class="muted">Кабинет появляется только после того, как бот подключился к вашему каналу. Напишите <code>!join Ник#Тег</code> в чате бота и подождите несколько секунд, страница обновится сама.</p>
         </details>
       </div>
-    </section>
-
-    <!-- Вошли через Google, Twitch ещё не привязан -->
-    <section id="view-connect" class="view card" hidden>
-      <h2>Привяжите свой Twitch</h2>
-      <p class="muted">Вы вошли через Google. Осталось один раз подтвердить свой Twitch-канал: так бот узнает, чей это кабинет. После этого на любом устройстве хватит входа через Google.</p>
-      <p class="muted small">Перед этим бот должен быть подключён к вашему каналу: напишите в чате бота<span class="botname"></span> <code>!join</code> (аккаунт Valorant по желанию: <code>!join Ник#Тег eu</code>).</p>
-      <button id="connectBtn" class="btn twitch" type="button">Привязать Twitch</button>
     </section>
 
     <!-- Ожидание привязки -->
@@ -218,7 +195,6 @@
           <button class="navbtn" type="button" data-nav="points"><svg class="ico" aria-hidden="true"><use href="#i-coin"/></svg><span>Очки</span></button>
           <button class="navbtn" type="button" data-nav="pred"><svg class="ico" aria-hidden="true"><use href="#i-crystal"/></svg><span>Предсказания</span></button>
           <button class="navbtn" type="button" data-nav="shop"><svg class="ico" aria-hidden="true"><use href="#i-cart"/></svg><span>Магазин</span><span id="shopBadge" class="badge" hidden></span></button>
-          <button class="navbtn" type="button" data-href="music.html" onclick="event.stopImmediatePropagation();location.href='music.html'"><svg class="ico" aria-hidden="true"><use href="#i-music"/></svg><span>Музыка</span></button>
           <div id="navGroupManage" class="navgroup">Управление</div>
           <button class="navbtn" type="button" data-nav="mods"><svg class="ico" aria-hidden="true"><use href="#i-users"/></svg><span>Модераторы</span></button>
         </nav>
@@ -269,7 +245,7 @@
             </div>
 
             <div class="card muted small">
-              <p>«Выйти» закрывает кабинет только на этом устройстве. Бот и все настройки остаются как есть. Чтобы вернуться, войдите через Google снова. «Отвязать Twitch» разрывает связь кабинета с вашим Twitch-каналом (настройки бота остаются). Отключить бота от канала можно командой <code>!leave</code> в чате бота.</p>
+              <p>«Выйти» закрывает кабинет только на этом устройстве. Бот и все настройки остаются как есть. Чтобы вернуться, войдите через Twitch снова. Отключить бота от канала можно командой <code>!leave</code> в чате бота.</p>
             </div>
           </div>
 
@@ -665,7 +641,7 @@
       <!-- Модераторы кабинета (только владелец канала) -->
       <div id="modsCard" class="card">
         <h2>Модераторы кабинета</h2>
-        <p class="muted">Добавьте человека по нику Twitch, и он сможет войти на этот сайт под своим аккаунтом (Google и привязка Twitch) и управлять вашим ботом: команды, авто-сообщения, фильтры, аккаунты Valorant, игры, кнопка «Тест». Удалить канал и управлять списком модераторов может только владелец.</p>
+        <p class="muted">Добавьте человека по нику Twitch, и он сможет войти на этот сайт под своим аккаунтом (вход через Twitch) и управлять вашим ботом: команды, авто-сообщения, фильтры, аккаунты Valorant, игры, кнопка «Тест». Удалить канал и управлять списком модераторов может только владелец.</p>
         <ul id="modList" class="list"></ul>
         <p id="modEmpty" class="empty" hidden>Модераторов пока нет.</p>
         <form id="modForm" class="row gap end" novalidate>
