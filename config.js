@@ -6,7 +6,7 @@ export const config = {
   apiUrl: 'https://c06poca4kr.apps.bot-hosting.cloud',
 
   // Twitch Developer Console → ваше приложение → Client ID
-  twitchClientId: '',
+  twitchClientId: '1794963369664',
 
   // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
   redirectUri: 'https://hotmail-585.github.io/Botyara_666/',
