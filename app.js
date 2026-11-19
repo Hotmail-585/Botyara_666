@@ -1740,20 +1740,20 @@ function renderDashboard() {
 // ---------- Меню кабинета ----------
 
 function showPanel(name) {
-  if (!PANELS.includes(name) || ((name === 'mods' || name === 'music') && !isOwn())) name = 'overview';
+  if (!PANELS.includes(name) || (name === 'mods' && !isOwn())) name = 'overview';
   S.panel = name;
   for (const p of document.querySelectorAll('.panel')) p.hidden = p.dataset.panel !== name;
   for (const b of document.querySelectorAll('.navbtn')) {
     if (b.dataset.nav === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
   $('sideNav').querySelector('[data-nav="mods"]').hidden = !isOwn();
-  $('sideNav').querySelector('[data-nav="music"]').hidden = !isOwn();
+  $('sideNav').querySelector('[data-nav="music"]').hidden = false;
   $('navGroupManage').hidden = !isOwn();
   if (name === 'points' || name === 'overview') { ensurePointsSub(); renderLeaders(); }
   if (name === 'pred') { ensurePredSub(); renderPred(); }
   if (name === 'stats') { ensureStatsSub(); renderChatStats(); }
-  if (name === 'music' && S.nick) {
-    initMusic({ uid: S.uid, nick: S.nick, redirect: redirectUri(), ret: musicRet });
+  if (name === 'music' && S.nick && S.active) {
+    initMusic({ uid: S.uid, nick: S.active, isOwner: isOwn(), redirect: redirectUri(), ret: isOwn() ? musicRet : null });
     musicRet = null;
   }
 }

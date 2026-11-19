@@ -1,14 +1,17 @@
 // Вкладка «Музыка» кабинета. Подгружается при первом открытии вкладки (app.js). Данные идут через сервер бота (fb.js).
-import { ref, onValue, get, set, push, update, remove, serverTimestamp, getPublicConfig } from './fb.js';
+import { ref, get, set, push, update, remove, serverTimestamp, getPublicConfig } from './fb.js';
 
+import { onValue as rawOnValue } from './fb.js';
 const $ = (id) => document.getElementById('mu-' + id);
+let offs = [], bound = false, timers = [];
+const onValue = (r, cb, err) => { const off = rawOnValue(r, cb, err); offs.push(off); return off; };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const db = null;
 const MUSIC_STATE_KEY = 'music_oauth_state';
 let CLIENT_ID = '', YT_KEY = '', REDIRECT = '';
 let clientIdReady = Promise.resolve();
 let uid = null, nick = null, key = null, cfg = {}, queue = [], control = {}, plays = {}, bans = { users: {}, tracks: {} }, fb = {}, playlists = {}, status = null;
-let started = null, pendingReturn = null;
+let started = null, pendingReturn = null, isOwner = true;
 
 // Ответ Twitch после входа для музыки (?code=&state=). Вызывается из app.js до старта; чужой ответ не трогает.
 export function consumeMusicReturn() {
@@ -25,8 +28,11 @@ export function consumeMusicReturn() {
 
 // Запуск вкладки один раз на сессию. opts: { uid, nick, redirect, ret }
 export function initMusic(opts) {
-  if (started === opts.uid + ':' + opts.nick) return;
-  started = opts.uid + ':' + opts.nick;
+  const id = opts.uid + ':' + opts.nick;
+  if (started === id) return;
+  if (started) { for (const f of offs) { try { f(); } catch { /* */ } } offs = []; for (const t of timers) clearInterval(t); timers = []; key = null; cfg = {}; queue = []; control = {}; plays = {}; bans = { users: {}, tracks: {} }; fb = {}; playlists = {}; status = null; $('gate').hidden = false; $('gate').textContent = 'Загрузка…'; $('app').hidden = true; }
+  started = id;
+  isOwner = opts.isOwner !== false;
   uid = opts.uid; nick = opts.nick; REDIRECT = opts.redirect; pendingReturn = opts.ret || null;
   clientIdReady = getPublicConfig().then((pub) => {
     if (typeof pub.twitchClientId === 'string' && /^[a-z0-9]{20,40}$/i.test(pub.twitchClientId)) CLIENT_ID = pub.twitchClientId;
@@ -61,10 +67,17 @@ function showTab(id) {
   document.querySelectorAll('#panel-music .mu-sec').forEach((s) => s.classList.toggle('on', s.id === 'mu-s-' + id));
   document.querySelectorAll('#mu-tabs button').forEach((b) => b.classList.toggle('on', b.dataset.t === id));
 }
-$('tabs').addEventListener('click', (e) => { if (e.target.dataset.t) showTab(e.target.dataset.t); });
-showTab('conn');
+
 
 function startApp() {
+  if (!bound) {
+    bound = true;
+    $('tabs').addEventListener('click', (e) => { if (e.target.dataset.t) showTab(e.target.dataset.t); });
+  }
+  showTab('conn');
+  // Подключение Twitch (награды) делает только владелец канала: токен принадлежит его аккаунту
+  $('tbtn').hidden = !isOwner;
+  if (!isOwner) $('tmsg').textContent = 'Подключить или отключить бота может только владелец канала. Остальное управление доступно вам как модератору.';
   $('obsUrl').textContent = obsUrl(); $('dockUrl').textContent = dockUrl();
   document.querySelectorAll('[data-copy]').forEach((b) => (b.onclick = async () => { const t = $(b.dataset.copy).textContent; try { await navigator.clipboard.writeText(t); b.textContent = 'Скопировано'; setTimeout(() => (b.textContent = 'Копировать'), 1500); } catch (e) { prompt('Скопируйте ссылку:', t); } }));
   $('newKey').onclick = rotateKey;
@@ -156,15 +169,15 @@ function bindPlayer() {
   $('bBack10').onclick = () => cmd('seek', -10); $('bFwd10').onclick = () => cmd('seek', 10); $('bRestart').onclick = () => cmd('restart');
   $('vol').onchange = (e) => update(P('control'), { volume: Number(e.target.value) });
   $('manualAdd').onclick = addManual;
-  $('queue').addEventListener('click', async (e) => {
+  $('queue').onclick = async (e) => {
     const d = e.target.dataset; const it = (k) => queue.find((i) => i.key === k);
     try {
       if (d.rm) await remove(P(`queue/${d.rm}`));
       else if (d.bt && it(d.bt) && confirm(`Забанить трек «${it(d.bt).title}»?`)) await banTrack(it(d.bt).id);
       else if (d.bu && it(d.bu) && confirm(`Забанить зрителя ${it(d.bu).from}?`)) await banUser(it(d.bu).from);
     } catch (err) { alert('Не удалось: ' + err.message); }
-  });
-  setInterval(renderNow, 5000);
+  };
+  timers.push(setInterval(renderNow, 5000));
 }
 function renderNow() {
   const it = queue.find((i) => i.key === plays.id) || queue.find((i) => i.status === 'playing');
@@ -266,11 +279,11 @@ function setupPlaylists() {
     } catch (e) { say(e.message, true); }
     $('plAdd').disabled = false;
   };
-  $('plList').addEventListener('click', async (e) => {
+  $('plList').onclick = async (e) => {
     const p = e.target.dataset.play, d = e.target.dataset.del;
     if (p) await update(P('fb'), { active: p, index: 0, mode: (fb.mode && fb.mode !== 'off') ? fb.mode : 'order' });
     if (d && confirm('Удалить плейлист?')) { await remove(P(`playlists/${d}`)); if (fb.active === d) await update(P('fb'), { active: '' }); }
-  });
+  };
 }
 function renderPlaylists() {
   const mode = fb.mode || 'off';
@@ -293,7 +306,7 @@ async function banUser(name) {
 function setupBans() {
   $('banUAdd').onclick = async () => { await banUser($('banU').value); $('banU').value = ''; };
   $('banTAdd').onclick = async () => { const id = extractVideoId($('banT').value); if (!id) return; await banTrack(id); $('banT').value = ''; };
-  $('s-ban').addEventListener('click', async (e) => { const u = e.target.dataset.unu, t = e.target.dataset.unt; if (u) await remove(P(`bans/users/${u}`)); if (t) await remove(P(`bans/tracks/${t}`)); });
+  $('s-ban').onclick = async (e) => { const u = e.target.dataset.unu, t = e.target.dataset.unt; if (u) await remove(P(`bans/users/${u}`)); if (t) await remove(P(`bans/tracks/${t}`)); };
 }
 function renderBans() {
   const list = (obj, attr) => Object.keys(obj).map((k) => `<div class="item"><div class="t"><b>${esc(k)}</b></div><button class="b g" data-${attr}="${esc(k)}">Разбанить</button></div>`).join('') || '<div class="mute">пусто</div>';
