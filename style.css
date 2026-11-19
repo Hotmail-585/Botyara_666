@@ -359,3 +359,31 @@ dialog.sheet[open] { display: flex; flex-direction: column; }
 #panel-music .tag { display: inline-block; margin-left: 8px; font-size: .7rem; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: var(--accent); color: #fff; vertical-align: middle; }
 #panel-music .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); margin-right: 8px; }
 #panel-music .dot.on { background: var(--ok); } #panel-music .dot.wait { background: var(--warn); }
+
+
+/* ---------- Страница входа ---------- */
+#view-login .lg { max-width: 520px; margin: 6vh auto 0; display: grid; gap: 18px; }
+#view-login .lg-card {
+  position: relative; overflow: hidden; text-align: center; padding: 36px 28px 26px;
+  background: radial-gradient(120% 80% at 50% -10%, var(--accent-soft), transparent 60%), var(--panel);
+  border: 1px solid var(--border); border-radius: calc(var(--radius) + 4px); box-shadow: var(--shadow);
+}
+#view-login .lg-logo { display: inline-grid; place-items: center; width: 72px; height: 72px; border-radius: 20px; background: var(--panel-2); border: 1px solid var(--border); margin-bottom: 16px; }
+#view-login .lg-logo img { width: 48px; height: 48px; object-fit: contain; }
+#view-login h1 { margin: 0 0 10px; font-size: 1.7rem; line-height: 1.2; letter-spacing: -.01em; }
+#view-login .lg-sub { margin: 0 auto 22px; max-width: 400px; color: var(--muted); line-height: 1.5; }
+#view-login .lg-btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; width: 100%; max-width: 340px; margin: 0; padding: 14px 22px; font-weight: 600; border-radius: 12px; }
+#view-login .lg-btn .ico { width: 20px; height: 20px; }
+#view-login .lg-note { margin: 12px 0 0; font-size: .85rem; color: var(--muted); }
+#view-login .lg-feat { list-style: none; display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 22px 0 0; padding: 18px 0 0; border-top: 1px solid var(--border); }
+#view-login .lg-feat li { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: .85rem; color: var(--muted); background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; }
+#view-login .lg-feat .ico { width: 15px; height: 15px; color: var(--accent-ink); }
+#view-login .lg-steps { list-style: none; margin: 0; padding: 0 6px; display: grid; gap: 10px; }
+#view-login .lg-steps li { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .92rem; line-height: 1.4; }
+#view-login .lg-steps b { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent-ink); font-size: .8rem; }
+#view-login .lg-steps code { white-space: nowrap; }
+@media (max-width: 520px) {
+  #view-login .lg { margin-top: 2vh; }
+  #view-login .lg-card { padding: 28px 18px 20px; }
+  #view-login h1 { font-size: 1.4rem; }
+}
