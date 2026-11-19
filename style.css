@@ -387,3 +387,21 @@ dialog.sheet[open] { display: flex; flex-direction: column; }
   #view-login .lg-card { padding: 28px 18px 20px; }
   #view-login h1 { font-size: 1.4rem; }
 }
+
+/* ---------- Ассистент: правки ---------- */
+.assist { height: min(560px, calc(100vh - 36px)); height: min(560px, calc(100dvh - 36px)); }
+.assist-head > div { min-width: 0; flex: 1; }
+.assist-head strong, .assist-head span.sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.assist-head .head-act { margin-left: 0; flex: none; }
+.assist-form { align-items: flex-end; }
+.assist-form textarea { height: 42px; min-height: 42px; padding: 9px 12px; line-height: 1.4; overflow-y: auto; text-overflow: ellipsis; }
+.assist-form textarea::placeholder { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+.assist-form .btn { height: 42px; flex: none; }
+.assist-log { overscroll-behavior: contain; scroll-behavior: smooth; }
+@media (max-width: 520px) {
+  .assist { height: min(80vh, 620px); height: min(80dvh, 620px); }
+  .assist-head span.sub { display: none; }
+  .assist-head .head-act { font-size: .75rem; padding: 5px 9px; }
+  .fab { right: 12px; bottom: 12px; min-height: 46px; }
+  .assist-form { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+}

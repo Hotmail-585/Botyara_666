@@ -175,3 +175,70 @@ svg.chart g:hover .hit { fill: var(--accent-soft); }
 .topname > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .meter { display: block; height: 4px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
 .meter-fill { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+
+/* ---------- Обновление внешнего вида кабинета ---------- */
+.side { padding: 8px; border-radius: 14px; }
+.navbtn { padding: 8px 12px; border-radius: 9px; font-weight: 600; }
+.navgroup { margin: 14px 12px 4px; }
+
+.pagehead h1 { font-size: 1.45rem; letter-spacing: -.01em; }
+
+/* Обзор: главный переключатель, плитки, быстрые разделы */
+.ov-hero { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 18px 20px;
+  background: radial-gradient(90% 140% at 0% 0%, var(--accent-soft), transparent 65%), var(--panel); }
+.ov-hero-main { flex: 1 1 240px; min-width: 0; }
+.ov-hero h2 { margin: 0 0 2px; }
+.ov-hero p { margin: 0; font-size: .9rem; }
+.stats { grid-template-columns: repeat(3, 1fr); }
+.stat { padding: 12px 16px; }
+.stat .v { font-size: 1.3rem; }
+
+.sumgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px; }
+.sum {
+  appearance: none; text-align: left; font: inherit; color: var(--text); cursor: pointer;
+  display: grid; gap: 2px; padding: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  transition: border-color .15s, transform .15s;
+}
+.sum:hover { border-color: var(--accent); }
+.sum:active { transform: scale(.98); }
+.sum:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sum-k { color: var(--muted); font-size: .78rem; font-weight: 600; }
+.sum-v { font-weight: 700; overflow-wrap: anywhere; }
+.sum-v.on { color: var(--ok); }
+.sum-v.off { color: var(--muted); }
+.ov-foot { margin: 4px 2px 0; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+
+/* Телефон */
+@media (max-width: 700px) {
+  .topbar-in { flex-wrap: nowrap; padding-top: 0; padding-bottom: 0; }
+  .userbox { width: auto; gap: 6px; }
+  .usernick { max-width: 28vw; margin-right: 0; font-size: .9rem; }
+  .brand span:last-child { font-size: .95rem; }
+  main.wrap { padding-top: 12px; }
+  .side {
+    position: sticky; top: 58px; z-index: 4; margin: 0 -16px; border-radius: 0; border-left: 0; border-right: 0;
+    padding: 6px 12px; scrollbar-width: none;
+  }
+  .side::-webkit-scrollbar { display: none; }
+  .navbtn { padding: 8px 14px; border-radius: 999px; gap: 8px; font-size: .9rem; }
+  .navbtn[aria-current="page"] { background: var(--accent); color: #fff; }
+  .pagehead h1 { font-size: 1.25rem; }
+  .pagehead p { font-size: .9rem; }
+  .stats { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { padding: 10px 12px; }
+  .stat .k { font-size: .72rem; }
+  .stat .v { font-size: 1rem; }
+  .sumgrid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .sum { padding: 10px 12px; }
+  .ov-hero { padding: 14px 16px; }
+  .row.between > div:first-child { flex-basis: 100%; }
+  .btn { min-height: 44px; }
+  .btn.small { min-height: 38px; }
+  .item-actions .btn { flex: 1 1 auto; }
+  .grid4 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 380px) { .stats { grid-template-columns: 1fr; } }
+@media (max-width: 700px) {
+  .brand span:last-child { white-space: nowrap; }
+  .usernick { display: none; }
+}

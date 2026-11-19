@@ -192,20 +192,8 @@
               <h1 id="ovTitle">Добро пожаловать!</h1>
               <p>Состояние бота и статистика канала</p>
             </div>
-            <div class="stats">
-              <div class="stat"><div class="k">Бот</div><div id="stBot" class="v">…</div></div>
-              <div class="stat"><div class="k">Свои команды</div><div id="stCmds" class="v">…</div></div>
-              <div class="stat"><div class="k">Предсказания Twitch</div><div id="stPred" class="v">…</div></div>
-              <div class="stat"><div class="k">Очки</div><div id="stPts" class="v">…</div></div>
-            </div>
-            <div id="modHint" class="card hint-card" hidden>
-              <h2>Последний шаг: выдайте боту модератора</h2>
-              <p>Бот подключён к вашему каналу. Чтобы он писал без ограничений Twitch (и работали фильтры чата), напишите в своём чате: <code id="modCmd">/mod бот</code></p>
-              <button id="modHintClose" class="btn small" type="button">Понятно</button>
-            </div>
-
-            <div class="card row between">
-              <div>
+            <div class="card ov-hero">
+              <div class="ov-hero-main">
                 <h2>Бот на канале</h2>
                 <p id="enabledNote" class="muted"></p>
               </div>
@@ -216,10 +204,13 @@
               </label>
             </div>
 
-            <div class="card">
-              <h2>Сводка</h2>
-              <dl id="summary" class="kv"></dl>
+            <div id="modHint" class="card hint-card" hidden>
+              <h2>Последний шаг: выдайте боту модератора</h2>
+              <p>Бот подключён к вашему каналу. Чтобы он писал без ограничений Twitch (и работали фильтры чата), напишите в своём чате: <code id="modCmd">/mod бот</code></p>
+              <button id="modHintClose" class="btn small" type="button">Понятно</button>
             </div>
+
+            <div id="summary" class="sumgrid" aria-label="Разделы кабинета"></div>
 
             <div class="card">
               <div class="row between">
@@ -230,9 +221,7 @@
               <p id="ovTopEmpty" class="empty" hidden>Пока ни у кого нет очков.</p>
             </div>
 
-            <div class="card muted small">
-              <p>«Выйти» закрывает кабинет только на этом устройстве. Бот и все настройки остаются как есть. Чтобы вернуться, войдите через Twitch снова. Отключить бота от канала можно командой <code>!leave</code> в чате бота.</p>
-            </div>
+            <p class="ov-foot">«Выйти» закрывает кабинет только на этом устройстве, настройки бота остаются. Отключить бота от канала: <code>!leave</code> в чате бота.</p>
           </div>
 
           <!-- Статистика чата -->
@@ -834,7 +823,7 @@
     </div>
     <div id="assistLog" class="assist-log" aria-live="polite"></div>
     <form id="assistForm" class="assist-form" autocomplete="off">
-      <textarea id="assistInput" rows="1" maxlength="200" placeholder="Спросите про команды, фильтры, очки…" aria-label="Вопрос ассистенту"></textarea>
+      <textarea id="assistInput" rows="1" maxlength="200" placeholder="Спросите про команды…" aria-label="Вопрос ассистенту"></textarea>
       <button class="btn primary" type="submit" aria-label="Отправить"><svg class="ico"><use href="#i-send"/></svg></button>
     </form>
   </section>

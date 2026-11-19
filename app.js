@@ -750,11 +750,11 @@ function assistCtx() {
   return { ch: S?.channel || null, predLink: S?.predLink, isOwn: S ? isOwn() : false };
 }
 
-function assistAdd(cls, nodes) {
+function assistAdd(cls, nodes, top) {
   const log = $('assistLog');
   const m = el('div', { class: 'msg ' + cls }, nodes);
   log.append(m);
-  log.scrollTop = log.scrollHeight;
+  if (top) log.scrollTop = 0; else log.scrollTop = log.scrollHeight;
   return m;
 }
 
@@ -786,15 +786,16 @@ function openAssistantIntro() {
     el('b', { text: 'Привет! Я помогу разобраться с кабинетом.' }),
     el('p', { text: 'Я не нейросеть, а помощник с готовыми подсказками: отвечаю про команды, фильтры, очки, предсказания и могу проверить, что у вас ещё не настроено. Если ответа нет, можно написать в поддержку.' }),
     assistChips(QUICK, [{ label: 'Написать в поддержку', action: 'support' }]),
-  ]);
+  ], true);
 }
 
 function openAssistant() {
   $('assist').hidden = false;
   $('assistBtn').hidden = true;
-  if (assistMode === 'support') { renderSupport(); updateSupportPip(); $('assistInput').focus(); return; }
+  const focusInput = () => { if (window.innerWidth > 520) $('assistInput').focus(); };
+  if (assistMode === 'support') { renderSupport(); updateSupportPip(); focusInput(); return; }
   if (!$('assistLog').childElementCount) openAssistantIntro();
-  $('assistInput').focus();
+  focusInput();
 }
 
 function closeAssistant() {
@@ -923,11 +924,11 @@ function setAssistMode(mode) {
   $('assistSwitch').textContent = sup ? 'К ассистенту' : 'Написать в поддержку';
   const inp = $('assistInput');
   inp.maxLength = sup ? SUPPORT_TEXT_MAX : 200;
-  inp.placeholder = sup ? 'Опишите проблему…' : 'Спросите про команды, фильтры, очки…';
+  inp.placeholder = sup ? 'Опишите проблему…' : 'Спросите про команды…';
   inp.setAttribute('aria-label', sup ? 'Сообщение в поддержку' : 'Вопрос ассистенту');
   if (sup) { renderSupport(); } else { $('assistLog').textContent = ''; openAssistantIntro(); }
   updateSupportPip();
-  inp.focus();
+  if (window.innerWidth > 520) inp.focus();
 }
 
 async function sendSupport(raw) {
@@ -977,11 +978,6 @@ function initExtras() {
 // Плитки и заголовок на обзоре
 function renderStats(ch) {
   $('ovTitle').textContent = S?.active ? `Добро пожаловать, ${S.active}!` : 'Добро пожаловать!';
-  const set2 = (id, text, on) => { const n = $(id); n.textContent = text; n.className = 'v' + (on === true ? ' on' : on === false ? ' off' : ''); };
-  set2('stBot', ch.enabled ? 'Активен' : 'Выключен', ch.enabled);
-  set2('stCmds', String(ch.commands.length));
-  set2('stPred', S.predLink === undefined ? '…' : S.predLink ? 'Подключены' : 'Не подключены', S.predLink === undefined ? null : S.predLink);
-  set2('stPts', ch.points.on ? 'Включены' : 'Выключены', ch.points.on);
 }
 
 // ---------- Статистика чата ----------
@@ -1769,21 +1765,21 @@ function renderSummary(ch) {
   renderStats(ch);
   const g = $('summary');
   g.replaceChildren();
-  const link = (label, panel) => el('button', { class: 'btn small ghost', type: 'button', text: label, onclick: () => onNavClick(panel) });
-  const row = (label, value, panel) => g.append(el('dt', { text: label }), el('dd', {}, [document.createTextNode(value + ' '), panel ? link('Открыть', panel) : null]));
+  const row = (label, value, panel, state) => g.append(el('button', { class: 'sum', type: 'button', onclick: () => onNavClick(panel) }, [
+    el('span', { class: 'sum-k', text: label }),
+    el('span', { class: 'sum-v' + (state === true ? ' on' : state === false ? ' off' : ''), text: value }),
+  ]));
   const act = activeNumber(ch);
   const acc = allAccounts(ch)[act - 1];
-  row('Аккаунт Valorant', ch.name && ch.tag
-    ? `${acc.name}#${acc.tag} (${acc.region})${allAccounts(ch).length > 1 ? `, активный №${act} из ${allAccounts(ch).length}` : ''}`
-    : 'не указан (необязательно)', 'valorant');
-  row('Свои команды', String(ch.commands.length), 'commands');
-  row('Авто-сообщения', `${ch.timers.length}${ch.timers.length ? (ch.timerOff ? ', выключены' : ', включены') : ''}`, 'timers');
+  row('Valorant', ch.name && ch.tag ? `${acc.name}#${acc.tag}${allAccounts(ch).length > 1 ? ` · №${act} из ${allAccounts(ch).length}` : ''}` : 'не указан', 'valorant', ch.name && ch.tag ? true : null);
+  row('Команды', String(ch.commands.length), 'commands');
+  row('Авто-сообщения', ch.timers.length ? `${ch.timers.length} · ${ch.timerOff ? 'выкл' : 'вкл'}` : 'нет', 'timers', ch.timers.length ? !ch.timerOff : null);
   const activeFilters = FILTER_KINDS.filter((k) => ch.filters[k].on).length;
-  row('Фильтры чата', ch.filters.on ? `включены, действующих фильтров: ${activeFilters} из ${FILTER_KINDS.length}` : 'выключены', 'filters');
-  row('Мини-игры', ch.games ? `включены${ch.roulette ? ', рулетка включена' : ''}` : 'выключены', 'games');
-  row('Очки', ch.points.on ? 'включены' : 'выключены', 'points');
-  row('Предсказания Twitch', S.predLink === undefined ? 'загрузка…' : S.predLink ? 'подключены' : 'не подключены', 'pred');
-  row('Магазин', `${ch.shop.length} наград, невыполненных заказов: ${S.purchases.length}`, 'shop');
+  row('Фильтры чата', ch.filters.on ? `вкл · ${activeFilters} из ${FILTER_KINDS.length}` : 'выкл', 'filters', ch.filters.on);
+  row('Мини-игры', ch.games ? `вкл${ch.roulette ? ' · рулетка' : ''}` : 'выкл', 'games', ch.games);
+  row('Очки', ch.points.on ? 'вкл' : 'выкл', 'points', ch.points.on);
+  row('Предсказания', S.predLink === undefined ? '…' : S.predLink ? 'подключены' : 'не подключены', 'pred', S.predLink === undefined ? null : S.predLink);
+  row('Магазин', `${ch.shop.length} наград${S.purchases.length ? ` · заказов: ${S.purchases.length}` : ''}`, 'shop');
 }
 
 // ---------- Фильтры чата ----------
