@@ -722,16 +722,22 @@ function newsSeen() {
   try { return localStorage.getItem(NEWS_KEY); } catch { return null; }
 }
 
+const NEWS_LABELS = { new: 'Новое', imp: 'Улучшено', fix: 'Исправлено' };
+
 function renderNews(unseenFrom) {
   const body = $('newsBody');
   body.replaceChildren();
   CHANGELOG.forEach((r, i) => {
-    const head = el('h3', { text: r.title });
-    if (unseenFrom !== null && i < unseenFrom) head.append(el('span', { class: 'tag-new', text: 'новое' }));
+    const when = el('div', { class: 'when', text: r.date });
+    if (unseenFrom !== null && i < unseenFrom) when.append(el('span', { class: 'tag-new', text: 'новая запись' }));
     body.append(el('div', { class: 'rel' }, [
-      el('div', { class: 'when', text: r.date }),
-      head,
-      el('ul', {}, r.items.map((t) => el('li', { text: t.replace(/`/g, '') }))),
+      when,
+      el('h3', { text: r.title }),
+      el('ul', {}, r.items.map((it) => {
+        const o = typeof it === 'string' ? { t: it } : it;
+        const label = NEWS_LABELS[o.k];
+        return el('li', {}, [label ? el('span', { class: 'chg ' + o.k, text: label }) : null, document.createTextNode(String(o.t).replace(/`/g, ''))]);
+      })),
     ]));
   });
 }

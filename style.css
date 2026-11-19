@@ -405,3 +405,13 @@ dialog.sheet[open] { display: flex; flex-direction: column; }
   .fab { right: 12px; bottom: 12px; min-height: 46px; }
   .assist-form { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
 }
+
+
+/* «Что нового»: метки пунктов */
+.rel ul { list-style: none; padding-left: 0; gap: 10px; }
+.rel li { line-height: 1.5; }
+.chg { display: inline-block; margin-right: 8px; padding: 2px 8px; border-radius: 6px; font-size: .68rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; vertical-align: 1px; border: 1px solid var(--border); color: var(--muted); }
+.chg.new { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chg.imp { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
+.chg.fix { color: var(--text); background: var(--panel-2); }
+.rel h3 { font-size: 1.05rem; }
