@@ -8,6 +8,11 @@
   <title>Кабинет Twitch-бота</title>
   <link rel="icon" type="image/png" href="favicon.png">
   <script>
+    // Язык: до отрисовки прячем страницу, если нужен не русский (i18n.js покажет её после перевода)
+    try { var l = localStorage.getItem('bot_lang'); if (!l) { var n = String(navigator.language || 'ru').toLowerCase(); l = n.indexOf('uk') === 0 ? 'uk' : (n.indexOf('ru') === 0 || n.indexOf('be') === 0) ? 'ru' : 'en'; }
+      if (l !== 'ru') { document.documentElement.style.visibility = 'hidden'; setTimeout(function () { document.documentElement.style.visibility = ''; }, 3000); } } catch (e) { /* не страшно */ }
+  </script>
+  <script>
     // Тема выбирается до отрисовки, чтобы страница не мигала
     try { var t = localStorage.getItem('bot_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) { /* не страшно */ }
   </script>
@@ -44,6 +49,11 @@
     <div class="wrap topbar-in">
       <div class="brand"><span class="logo"><img src="logo.png" alt="" width="32" height="32"></span><span>Кабинет бота</span></div>
       <div class="tools">
+        <div id="langSw" class="langsw" role="group" aria-label="Language" translate="no">
+          <button type="button" data-lang="ru" title="Русский">RU</button>
+          <button type="button" data-lang="uk" title="Українська">UA</button>
+          <button type="button" data-lang="en" title="English">EN</button>
+        </div>
         <button id="newsBtn" class="iconbtn" type="button" aria-haspopup="dialog">
           <svg class="ico"><use href="#i-spark"/></svg><span class="lbl">Что нового</span><span id="newsPip" class="pip" hidden></span>
         </button>
@@ -671,7 +681,7 @@
                     </div>
                     <div class="card">
                       <h2>Добавить вручную</h2>
-                      <div class="row"><input type="text" id="mu-manual" placeholder="Ссылка на YouTube"><button class="b" id="mu-manualAdd">Добавить</button></div>
+                      <div class="row"><input type="text" id="mu-manual" placeholder="Ссылка на YouTube или SoundCloud"><button class="b" id="mu-manualAdd">Добавить</button></div>
                       <div class="mute" id="mu-manualSt"></div>
                     </div>
                     <div class="card"><h2>Очередь</h2><div id="mu-queue" class="mute">пусто</div></div>
@@ -693,6 +703,7 @@
                       <div class="row"><label style="width:260px">Максимальная длительность, мин (0 = без лимита)</label><input type="number" id="mu-cfgDur" min="0" max="600" style="max-width:110px"></div>
                       <div class="row"><label style="width:260px">Макс. треков в очереди</label><input type="number" id="mu-cfgMaxQ" min="1" max="200" style="max-width:110px"></div>
                       <div class="row"><label style="width:260px">Макс. треков от одного зрителя</label><input type="number" id="mu-cfgMaxU" min="1" max="50" style="max-width:110px"></div>
+                      <div class="row"><label><input type="checkbox" id="mu-cfgSc"> разрешить треки SoundCloud (одиночные треки; плейлисты только с YouTube)</label></div>
                       <div class="row"><label><input type="checkbox" id="mu-cfgChat"> отвечать в чате («добавлено» / «отклонено: причина, баллы возвращены»)</label></div>
                       <p class="mute">Отклонённый заказ отменяется, и Twitch возвращает баллы зрителю. Отметка 18+ берётся с YouTube: если видео не помечено возрастным ограничением, бот его не отличит.</p>
                       <button class="b" id="mu-cfgSave">Сохранить</button> <span id="mu-cfgSt" class="mute"></span>

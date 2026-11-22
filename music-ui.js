@@ -1,4 +1,6 @@
 // Вкладка «Музыка» кабинета. Подгружается при первом открытии вкладки (app.js). Данные идут через сервер бота (fb.js).
+import { t, locale } from './i18n.js';
+import { config } from './config.js';
 import { ref, get, set, push, update, remove, serverTimestamp, getPublicConfig } from './fb.js';
 
 import { onValue as rawOnValue } from './fb.js';
@@ -156,11 +158,11 @@ function bindPlayer() {
   onValue(P('history'), (s) => {
     const list = Object.values(s.val() || {}).sort((a, b) => b.ts - a.ts).slice(0, 50);
     const R = { played: 'сыграно', skipped: 'пропущено', error: 'ошибка' };
-    $('hist').innerHTML = list.length ? list.map((h) => `<div class="item"><div class="t"><b>${esc(h.title)}</b><span class="mute">${esc(h.from || '')} · ${new Date(h.ts).toLocaleString()} · ${R[h.result] || ''}</span></div></div>`).join('') : 'пока пусто';
+    $('hist').innerHTML = list.length ? list.map((h) => `<div class="item"><div class="t"><b>${esc(h.title)}</b><span class="mute">${esc(h.from || '')} · ${new Date(h.ts).toLocaleString(locale())} · ${esc(t(R[h.result] || ''))}</span></div></div>`).join('') : 'пока пусто';
   });
   onValue(P('log'), (s) => {
     const list = Object.values(s.val() || {}).sort((a, b) => b.at - a.at).slice(0, 20);
-    $('orders').innerHTML = list.length ? list.map((l) => `<div class="item"><div class="t"><b class="${l.result === 'added' ? 'ok' : 'err'}">${l.result === 'added' ? '✔' : '✖'} ${esc(l.user)}</b><span class="mute">${esc(l.text || '')} → ${esc(l.result === 'added' ? l.reason : 'отклонён: ' + l.reason)} · ${new Date(l.at).toLocaleTimeString()}</span></div></div>`).join('') : 'пока нет';
+    $('orders').innerHTML = list.length ? list.map((l) => `<div class="item"><div class="t"><b class="${l.result === 'added' ? 'ok' : 'err'}">${l.result === 'added' ? '✔' : '✖'} ${esc(l.user)}</b><span class="mute">${esc(l.text || '')} → ${esc(l.result === 'added' ? t(l.reason) : t('отклонён: {0}', t(l.reason)))} · ${new Date(l.at).toLocaleTimeString(locale())}</span></div></div>`).join('') : 'пока нет';
   });
   $('bPrev').onclick = () => cmd('prev'); $('bSkip').onclick = () => cmd('skip');
   $('bPlay').onclick = () => update(P('control'), { stopped: false, paused: false });
@@ -186,7 +188,7 @@ function renderNow() {
   $('bPlay').style.display = control.stopped ? '' : 'none'; $('bStop').style.display = control.stopped ? 'none' : '';
 }
 function renderQueue() {
-  $('queue').innerHTML = queue.length ? queue.map((i) => `<div class="item"><div class="t"><b>${esc(i.title)}${i.status === 'playing' ? '<span class="tag">играет</span>' : ''}</b><span class="mute">${esc(i.from)}${i.channel ? ' · ' + esc(i.channel) : ''}</span></div>` +
+  $('queue').innerHTML = queue.length ? queue.map((i) => `<div class="item"><div class="t"><b>${esc(i.title)}${i.status === 'playing' ? '<span class="tag">играет</span>' : ''}${i.src === 'sc' ? '<span class="tag">SoundCloud</span>' : ''}</b><span class="mute">${esc(i.from)}${i.channel ? ' · ' + esc(i.channel) : ''}</span></div>` +
     `<button class="b g" title="Убрать" data-rm="${esc(i.key)}">✕</button><button class="b g" title="Забанить трек" data-bt="${esc(i.key)}">🚫</button>${String(i.from).startsWith('📂') ? '' : `<button class="b g" title="Забанить зрителя" data-bu="${esc(i.key)}">👤</button>`}</div>`).join('') : 'пусто';
   renderNow();
 }
@@ -216,10 +218,25 @@ async function playlistTracks(plId, max) {
   } while (tok && out.length < max);
   return out;
 }
+async function scInfo(text) {
+  const r = await fetch(`${String(config.apiUrl).replace(/\/+$/, '')}/sc-info?url=${encodeURIComponent(String(text).trim())}`);
+  return r.json();
+}
 async function addManual() {
-  const st = $('manualSt'); const id = extractVideoId($('manual').value);
+  const st = $('manualSt'); const raw = $('manual').value; const id = extractVideoId(raw);
   const say = (m, ok) => { st.className = 'mute ' + (ok ? 'ok' : 'err'); st.textContent = m; };
-  if (!id) return say('Не похоже на ссылку YouTube');
+  if (/soundcloud\.com/i.test(raw)) {
+    say('Проверяю SoundCloud…', true);
+    try {
+      const d = await scInfo(raw);
+      if (d.error) return say(d.error);
+      if (bans.tracks[d.id]) return say('Этот трек в бане');
+      await push(P('queue'), { id: d.id, title: d.title, channel: d.channel, from: 'Стример', ts: Date.now(), status: 'approved', source: 'manual', src: 'sc', url: d.url, thumb: d.thumb });
+      $('manual').value = ''; say('Добавлено', true);
+    } catch (e) { say('Не удалось: ' + e.message); }
+    return;
+  }
+  if (!id) return say('Не похоже на ссылку YouTube или SoundCloud');
   if (bans.tracks[id]) return say('Этот трек в бане');
   const info = (await videoInfo(id)) || { title: 'YouTube track', channel: '' };
   try { await push(P('queue'), { id, title: String(info.title).slice(0, 200), channel: String(info.channel || '').slice(0, 100), from: 'Стример', ts: Date.now(), status: 'approved', source: 'manual' }); $('manual').value = ''; say('Добавлено', true); } catch (e) { say(e.message); }
@@ -234,7 +251,7 @@ function fillCfg() {
   val('cfgTrack', has ? (cfg.trackReward || '') : 'Заказать песню'); val('cfgTrackCost', cfg.trackCost || 500);
   val('cfgPl', cfg.playlistReward || ''); val('cfgPlCost', cfg.playlistCost || 1000); val('cfgMaxPl', cfg.maxPlTracks || 10);
   val('cfgDur', cfg.maxDurationMin ?? 10); val('cfgMaxQ', cfg.maxQueue || 50); val('cfgMaxU', cfg.maxPerUser || 5);
-  chk('cfgAge', cfg.blockAgeRestricted !== false); chk('cfgEmb', cfg.requireEmbeddable !== false); chk('cfgChat', cfg.chatReplies !== false);
+  chk('cfgAge', cfg.blockAgeRestricted !== false); chk('cfgEmb', cfg.requireEmbeddable !== false); chk('cfgChat', cfg.chatReplies !== false); chk('cfgSc', cfg.allowSoundcloud !== false);
 }
 function setupSettings() {
   $('cfgSave').onclick = async () => {
@@ -243,7 +260,7 @@ function setupSettings() {
         trackReward: $('cfgTrack').value.trim().slice(0, 45), trackCost: clampN($('cfgTrackCost').value, 1, 1000000, 500),
         playlistReward: $('cfgPl').value.trim().slice(0, 45), playlistCost: clampN($('cfgPlCost').value, 1, 1000000, 1000), maxPlTracks: clampN($('cfgMaxPl').value, 1, 50, 10),
         maxDurationMin: clampN($('cfgDur').value, 0, 600, 10), maxQueue: clampN($('cfgMaxQ').value, 1, 200, 50), maxPerUser: clampN($('cfgMaxU').value, 1, 50, 5),
-        blockAgeRestricted: $('cfgAge').checked, requireEmbeddable: $('cfgEmb').checked, chatReplies: $('cfgChat').checked,
+        blockAgeRestricted: $('cfgAge').checked, requireEmbeddable: $('cfgEmb').checked, chatReplies: $('cfgChat').checked, allowSoundcloud: $('cfgSc').checked,
       });
       $('cfgSt').className = 'ok'; $('cfgSt').textContent = 'Сохранено. Бот обновит награды в течение пары секунд.';
     } catch (e) { $('cfgSt').className = 'err'; $('cfgSt').textContent = e.message; }
@@ -305,7 +322,11 @@ async function banUser(name) {
 }
 function setupBans() {
   $('banUAdd').onclick = async () => { await banUser($('banU').value); $('banU').value = ''; };
-  $('banTAdd').onclick = async () => { const id = extractVideoId($('banT').value); if (!id) return; await banTrack(id); $('banT').value = ''; };
+  $('banTAdd').onclick = async () => {
+    const raw = $('banT').value; let id = extractVideoId(raw);
+    if (/soundcloud\.com/i.test(raw)) { try { const d = await scInfo(raw); id = d.error ? null : d.id; } catch (e) { id = null; } }
+    if (!id) return; await banTrack(id); $('banT').value = '';
+  };
   $('s-ban').onclick = async (e) => { const u = e.target.dataset.unu, t = e.target.dataset.unt; if (u) await remove(P(`bans/users/${u}`)); if (t) await remove(P(`bans/tracks/${t}`)); };
 }
 function renderBans() {

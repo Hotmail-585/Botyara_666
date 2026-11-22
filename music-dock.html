@@ -48,7 +48,7 @@
 
 <div class="card">
   <h2>Добавить трек</h2>
-  <div class="row"><input type="text" id="manual" placeholder="Ссылка на YouTube"><button class="sm acc" id="manualAdd">＋</button></div>
+  <div class="row"><input type="text" id="manual" placeholder="Ссылка на YouTube или SoundCloud"><button class="sm acc" id="manualAdd">＋</button></div>
   <div class="mute" id="manualSt"></div>
 </div>
 
@@ -56,6 +56,7 @@
 <div class="card"><h2>Последние заказы</h2><div id="log" class="mute">пока нет</div></div>
 
 <script type="module">
+  import { t, locale } from './i18n.js';
 import { config } from './config.js';
 import { initApi, setPlayerKey, startConnection, ref, onValue, get, push, update, remove } from './fb.js';
 
@@ -84,7 +85,7 @@ onValue(P('control'), (s) => {
 onValue(P('state'), (s) => { state = s.val() || {}; renderNow(); });
 onValue(P('log'), (s) => {
   const list = Object.values(s.val() || {}).sort((a, b) => b.at - a.at).slice(0, 8);
-  $('log').innerHTML = list.length ? list.map((l) => `<div class="item"><div class="t"><b class="${l.result === 'added' ? 'ok' : 'err'}">${l.result === 'added' ? '✔' : '✖'} ${esc(l.user)}</b><span class="mute">${esc(l.result === 'added' ? l.reason : 'отклонён: ' + l.reason)}</span></div></div>`).join('') : 'пока нет';
+  $('log').innerHTML = list.length ? list.map((l) => `<div class="item"><div class="t"><b class="${l.result === 'added' ? 'ok' : 'err'}">${l.result === 'added' ? '✔' : '✖'} ${esc(l.user)}</b><span class="mute">${esc(l.result === 'added' ? t(l.reason) : t('отклонён: {0}', t(l.reason)))}</span></div></div>`).join('') : 'пока нет';
 });
 
 function renderNow() {
@@ -99,7 +100,7 @@ function renderNow() {
   $('bStop').style.display = control.stopped ? 'none' : '';
 }
 function renderQueue() {
-  $('queue').innerHTML = queue.length ? queue.map((i) => `<div class="item"><div class="t"><b>${esc(i.title)}${i.status === 'playing' ? '<span class="tag">играет</span>' : ''}</b><span class="mute">${esc(i.from)}</span></div>` +
+  $('queue').innerHTML = queue.length ? queue.map((i) => `<div class="item"><div class="t"><b>${esc(i.title)}${i.status === 'playing' ? '<span class="tag">играет</span>' : ''}${i.src === 'sc' ? '<span class="tag">SoundCloud</span>' : ''}</b><span class="mute">${esc(i.from)}</span></div>` +
     `<button class="sm" title="Убрать" data-rm="${esc(i.key)}">✕</button><button class="sm" title="Забанить трек" data-bt="${esc(i.key)}">🚫</button>${String(i.from).startsWith('📂') ? '' : `<button class="sm" title="Забанить зрителя" data-bu="${esc(i.key)}">👤</button>`}</div>`).join('') : 'пусто';
 }
 
@@ -143,9 +144,21 @@ setInterval(renderNow, 5000);
 // ───── ручное добавление ─────
 const extractVideoId = (t) => { const m = String(t).match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([A-Za-z0-9_-]{11})/); return m ? m[1] : (/^[A-Za-z0-9_-]{11}$/.test(String(t).trim()) ? String(t).trim() : null); };
 $('manualAdd').onclick = async () => {
-  const st = $('manualSt'); const id = extractVideoId($('manual').value);
+  const st = $('manualSt'); const raw = $('manual').value;
   const say = (m, ok) => { st.className = 'mute ' + (ok ? 'ok' : 'err'); st.textContent = m; };
-  if (!id) return say('Не похоже на ссылку YouTube');
+  if (/soundcloud\.com/i.test(raw)) {
+    say('Проверяю SoundCloud…', true);
+    try {
+      const r = await fetch(`${String(config.apiUrl).replace(/\/+$/, '')}/sc-info?url=${encodeURIComponent(raw.trim())}`);
+      const d = await r.json();
+      if (d.error) return say(d.error);
+      await push(P('queue'), { id: d.id, title: d.title, channel: d.channel, from: 'Стример', ts: Date.now(), status: 'approved', source: 'manual', src: 'sc', url: d.url, thumb: d.thumb });
+      $('manual').value = ''; say('Добавлено', true);
+    } catch (e) { say('Не удалось: ' + e.message); }
+    return;
+  }
+  const id = extractVideoId(raw);
+  if (!id) return say('Не похоже на ссылку YouTube или SoundCloud');
   let title = 'YouTube track', channel = '';
   try { const r = await fetch(`https://www.youtube.com/oembed?url=https://youtube.com/watch?v=${id}&format=json`); if (r.ok) { const d = await r.json(); title = d.title; channel = d.author_name; } } catch (e) { /* */ }
   try {

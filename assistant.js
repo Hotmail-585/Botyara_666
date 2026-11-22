@@ -175,13 +175,35 @@ export const TOPICS = [
     ]),
 ];
 
-const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-я0-9{}!/#@ -]/g, ' ').replace(/\s+/g, ' ').trim();
+// Слова для вопросов на украинском и английском: тема находится так же, как по-русски. Ответы переводятся словарём (lang/*.js).
+const EXTRA_KEYS = {
+  start: ['start', 'begin', 'getting started', 'first step', 'how to use', 'set up the bot', 'почат', 'початок', 'з чого', 'перший крок', 'як користуватися', 'налаштувати бота'],
+  commands: ['command', 'custom command', 'add command', 'create command', 'bot reply', 'команд', 'створити команду', 'додати команду', 'відповідь бота'],
+  variables: ['variable', 'placeholder', 'substitut', 'змінн', 'підстановк'],
+  aliases: ['alias', 'another name', 'synonym', 'аліас', 'інша назва', 'синонім'],
+  timers: ['timer', 'auto message', 'auto-message', 'automessage', 'scheduled message', 'interval', 'таймер', 'авто-повідомлен', 'автоповідомлен', 'інтервал'],
+  filters: ['filter', 'spam', 'caps', 'banned word', 'link block', 'permit', 'фільтр', 'спам', 'капс', 'заборонен', 'посилан'],
+  points: ['points', 'balance', 'daily bonus', 'leaderboard', 'очки', 'бали', 'баланс', 'щоденн'],
+  games: ['game', 'roulette', '8ball', 'dice', 'coin', 'duel', 'ігр', 'гра', 'рулетк', 'кубик', 'дуел'],
+  shop: ['shop', 'store', 'reward', 'order', 'buy', 'магазин', 'нагород', 'замовлен', 'купити'],
+  pred: ['prediction', 'predict', 'bet', 'передбачен', 'ставк'],
+  valorant: ['valorant', 'rank', 'peak', 'last game', 'ранг', 'пік', 'акаунт valorant'],
+  mod: ['moderator', 'mod ', 'permission', 'модератор', 'права'],
+  notworking: ['not working', "doesn't work", 'does not work', 'broken', 'error', 'problem', 'bug', 'не працю', 'не відповіда', 'помилка', 'проблем', 'збій'],
+  account: ['account', 'nickname', 'tag', 'region', 'акаунт', 'нік', 'тег', 'регіон'],
+  stats: ['stats', 'statistic', 'chart', 'activity', 'top chatter', 'статистик', 'графік', 'активніст'],
+  support: ['support', 'contact', 'help me', 'human', 'owner', 'підтримк', 'зв\'язатися', 'допоможіть', 'власник'],
+  ui: ['theme', 'dark', 'light', 'design', "what's new", 'whats new', 'update', 'news', 'тема', 'темн', 'світл', 'дизайн', 'що нового', 'оновлен', 'новин'],
+};
+for (const tp of TOPICS) if (EXTRA_KEYS[tp.id]) tp.keys = [...tp.keys, ...EXTRA_KEYS[tp.id]];
+
+const norm = (s) => String(s || '').toLowerCase().replace(/ё/g, 'е').replace(/[^a-zа-яіїєґ0-9{}!/#@ -]/g, ' ').replace(/\s+/g, ' ').trim();
 
 // Ответ на вопрос: { kind: 'topic'|'check'|'unknown', title, lines, go, more }
 export function answer(question, ctx) {
   const q = norm(question);
   if (!q) return unknown();
-  if (/(проверь|проверить|чего не хват|что не настроен|что осталос|что еще|что ещё|готов ли)/.test(q) || q === 'проверить мою настройку') return checkSetup(ctx);
+  if (/(проверь|проверить|чего не хват|что не настроен|что осталос|что еще|что ещё|готов ли|перевір|чого не вистача|що не налаштован|що залишилос|check my|check setup|verify|what.s missing|what is missing|what.s left|is everything set)/.test(q) || q === 'проверить мою настройку') return checkSetup(ctx);
   let best = null;
   let bestScore = 0;
   for (const t of TOPICS) {

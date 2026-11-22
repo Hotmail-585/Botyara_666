@@ -4,6 +4,7 @@ import {
   loginWithTwitch, currentSession, logoutSession, onSessionChange, getPublicConfig,
 } from './fb.js';
 
+import { getLang, setLang, locale } from './i18n.js';
 import { config } from './config.js';
 import { CHANGELOG } from './changelog.js';
 import { initMusic, consumeMusicReturn } from './music-ui.js';
@@ -891,8 +892,8 @@ function stopSupport() {
 function fmtWhen(ms) {
   if (!ms) return '';
   const d = new Date(ms);
-  const hm = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${hm}`;
+  const hm = d.toLocaleTimeString(locale(), { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? hm : `${d.toLocaleDateString(locale(), { day: '2-digit', month: '2-digit' })} ${hm}`;
 }
 
 function renderSupport() {
@@ -957,6 +958,10 @@ async function sendSupport(raw) {
 }
 
 function initExtras() {
+  for (const b of document.querySelectorAll('#langSw button')) {
+    b.setAttribute('aria-pressed', String(b.dataset.lang === getLang()));
+    b.addEventListener('click', () => setLang(b.dataset.lang));
+  }
   applyThemeIcon();
   $('themeBtn').addEventListener('click', onThemeToggle);
   $('newsPip').hidden = newsSeen() === CHANGELOG[0].id;
@@ -1785,7 +1790,7 @@ function renderSummary(ch) {
   row('Мини-игры', ch.games ? `вкл${ch.roulette ? ' · рулетка' : ''}` : 'выкл', 'games', ch.games);
   row('Очки', ch.points.on ? 'вкл' : 'выкл', 'points', ch.points.on);
   row('Предсказания', S.predLink === undefined ? '…' : S.predLink ? 'подключены' : 'не подключены', 'pred', S.predLink === undefined ? null : S.predLink);
-  row('Магазин', `${ch.shop.length} наград${S.purchases.length ? ` · заказов: ${S.purchases.length}` : ''}`, 'shop');
+  row('Магазин', S.purchases.length ? `наград: ${ch.shop.length} · заказов: ${S.purchases.length}` : `наград: ${ch.shop.length}`, 'shop');
 }
 
 // ---------- Фильтры чата ----------

@@ -189,3 +189,5 @@ svg.chart .bar { fill: var(--accent); filter: drop-shadow(0 0 4px rgba(255, 45, 
 .navgroup { margin: 5px 10px; }
 @media (max-width: 860px) { .navbtn span:not(.badge) { white-space: nowrap; } .navbtn { flex-basis: 78px; width: 78px; } }
 #view-login h1 { font-size: 1.25rem; letter-spacing: .04em; text-wrap: balance; }
+.langsw { background: #0b0b0d; border-color: #2e1c1f; }
+.langsw button[aria-pressed="true"] { box-shadow: 0 0 12px rgba(255, 45, 58, .5); }

@@ -28,10 +28,12 @@
 </head>
 <body>
 <div id="yt"></div>
+<iframe id="sc" title="SoundCloud" allow="autoplay" src="about:blank" style="position:absolute;left:-9999px;top:0;width:100px;height:100px;border:0"></iframe>
 <div id="list" class="hidden"></div>
 <div id="msg"></div>
 
 <script type="module">
+  import { t, locale } from './i18n.js';
 import { config } from './config.js';
 import { initApi, setPlayerKey, startConnection, ref, onValue, set, push, update, remove } from './fb.js';
 
@@ -63,7 +65,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
 
 // ───── виджет: список как у Tune2Live ─────
 const seen = new Set();
-const thumbOf = (id) => `https://i.ytimg.com/vi/${encodeURIComponent(id)}/mqdefault.jpg`;
+const thumbOf = (i) => (i.src === 'sc' ? String(i.thumb || '') : `https://i.ytimg.com/vi/${encodeURIComponent(i.id)}/mqdefault.jpg`);
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 function applyWidget(w) {
   w = w || {};
@@ -81,7 +83,7 @@ function render() {
   const shown = upcoming.slice(0, widget.nextCount);
   const hide = widget.hideWhenIdle && !cur && !items.length;
   box.classList.toggle('hidden', hide);
-  const th = (i) => (widget.showThumb ? `<div class="thumb" style="background-image:url('${thumbOf(i.id)}')"></div>` : '');
+  const th = (i) => (widget.showThumb && thumbOf(i) ? `<div class="thumb" style="background-image:url('${esc(thumbOf(i))}')"></div>` : '');
   const by = (i) => (widget.showFrom && i.from ? `<span class="f">${esc(i.from)}</span>` : '');
   const rowCls = (k) => { const n = !seen.has(k); seen.add(k); return n ? ' new' : ''; };
   const rows = [];
@@ -115,13 +117,53 @@ function loadYtApi() {
     });
   };
 }
+// ───── SoundCloud (Widget API) ─────
+let scw = null, scApiLoading = false, scPos = 0, scDur = 0, scWanted = null, scSeq = 0;
+let maxDurMin = 10;
+const scUrlOf = (item) => String(item.url || '').startsWith('https://') ? item.url : `https://api.soundcloud.com/tracks/${String(item.id).slice(2)}`;
+function loadScApi() {
+  if (scApiLoading) return; scApiLoading = true;
+  const s = document.createElement('script'); s.src = 'https://w.soundcloud.com/player/api.js';
+  s.onload = () => { if (scWanted) { const it = scWanted; scWanted = null; startSc(it); } };
+  s.onerror = () => { scApiLoading = false; if (cur) { showMsg('Не удалось загрузить плеер SoundCloud (он открывается в вашей сети?), пропускаю трек.'); finish('error'); } };
+  document.head.appendChild(s);
+}
+function startSc(item) {
+  cur = { item };
+  if (!window.SC || !window.SC.Widget) { scWanted = item; loadScApi(); return; }
+  const seq = ++scSeq; scPos = 0; scDur = 0;
+  const frame = $('sc');
+  if (!scw) {
+    frame.src = 'https://w.soundcloud.com/player/?url=' + encodeURIComponent(scUrlOf(item)) + '&auto_play=true&visual=false';
+    scw = window.SC.Widget(frame);
+    const E = window.SC.Widget.Events;
+    scw.bind(E.READY, () => { try { scw.setVolume(volume); } catch (e) { /* */ } afterScLoad(seq); });
+    scw.bind(E.PLAY, () => { if (cur && (paused || stopped)) try { scw.pause(); } catch (e) { /* */ } });
+    scw.bind(E.PLAY_PROGRESS, (d) => { scPos = (d.currentPosition || 0) / 1000; });
+    scw.bind(E.FINISH, () => { if (cur && cur.item.src === 'sc') finish('played'); });
+    scw.bind(E.ERROR, () => { if (cur && cur.item.src === 'sc') { showMsg('SoundCloud не смог проиграть этот трек, пропускаю.'); finish('error'); } });
+    return;
+  }
+  scw.load(scUrlOf(item), { auto_play: true, visual: false, callback: () => { try { scw.setVolume(volume); } catch (e) { /* */ } afterScLoad(seq); } });
+}
+function afterScLoad(seq) {
+  try {
+    scw.getDuration((ms) => {
+      if (seq !== scSeq || !cur || cur.item.src !== 'sc') return;
+      scDur = (ms || 0) / 1000;
+      if (maxDurMin > 0 && scDur > maxDurMin * 60) { showMsg(`Трек SoundCloud длиннее ${maxDurMin} мин, пропускаю.`, true); finish('skipped'); }
+    });
+  } catch (e) { /* */ }
+}
 function startYt(item) {
+  if (item.src === 'sc') { startSc(item); return; }
   cur = { item };
   if (ytReady) ytPlayer.loadVideoById(item.id); else { ytWanted = item.id; loadYtApi(); }
 }
 function stopPlayers() {
   try { if (ytReady) ytPlayer.stopVideo(); } catch (e) { /* */ }
-  ytWanted = null;
+  try { if (scw) scw.pause(); } catch (e) { /* */ }
+  ytWanted = null; scWanted = null; scSeq++;
 }
 
 // ───── очередь ─────
@@ -132,7 +174,7 @@ async function finish(result) {
   stopPlayers();
   render();
   try {
-    await push(P('history'), { id: item.id, title: item.title, channel: item.channel || '', from: item.from || '', source: item.source || '', ts: Date.now(), result });
+    await push(P('history'), { id: item.id, title: item.title, channel: item.channel || '', from: item.from || '', source: item.source || '', src: item.src || '', url: item.url || '', thumb: item.thumb || '', ts: Date.now(), result });
     await remove(P(`queue/${item.key}`));
     pruneHistory();
   } catch (e) { showMsg('Не удалось обновить очередь: ' + e.message); }
@@ -201,10 +243,11 @@ function maybeFallback() {
 // ───── команды управления ─────
 function position() {
   if (!cur) return { pos: 0, dur: 0 };
+  if (cur.item.src === 'sc') return { pos: scPos, dur: scDur };
   try { if (ytReady) return { pos: ytPlayer.getCurrentTime() || 0, dur: ytPlayer.getDuration() || 0 }; } catch (e) { /* */ }
   return { pos: 0, dur: 0 };
 }
-function seekTo(sec) { try { if (ytReady && cur) ytPlayer.seekTo(Math.max(0, sec), true); } catch (e) { /* */ } }
+function seekTo(sec) { try { if (cur && cur.item.src === 'sc') { if (scw) scw.seekTo(Math.max(0, sec) * 1000); } else if (ytReady && cur) ytPlayer.seekTo(Math.max(0, sec), true); } catch (e) { /* */ } }
 
 async function doPrev() {
   busyCmd = true;
@@ -215,7 +258,7 @@ async function doPrev() {
     const h = hist[k];
     const base = items.length ? Math.min(...items.map((i) => i.ts)) : Date.now();
     const was = cur; cur = null; stopPlayers();
-    await push(P('queue'), { id: h.id, title: h.title, channel: h.channel || '', from: h.from || '', source: 'back', ts: base - 2, status: 'approved' });
+    await push(P('queue'), { id: h.id, title: h.title, channel: h.channel || '', from: h.from || '', source: 'back', ts: base - 2, status: 'approved', ...(h.src === 'sc' ? { src: 'sc', url: h.url || '', thumb: h.thumb || '' } : {}) });
     await remove(P(`history/${k}`));
     if (was) await update(P(`queue/${was.item.key}`), { ts: base - 1, status: 'approved' });   // текущий трек встанет следом
     if (stopped) await update(P('control'), { stopped: false });
@@ -225,7 +268,7 @@ async function doPrev() {
 async function doSkipIdle() {               // «пропустить», пока ничего не играет
   const it = items[0]; if (!it) return;
   try {
-    await push(P('history'), { id: it.id, title: it.title, channel: it.channel || '', from: it.from || '', source: it.source || '', ts: Date.now(), result: 'skipped' });
+    await push(P('history'), { id: it.id, title: it.title, channel: it.channel || '', from: it.from || '', source: it.source || '', src: it.src || '', url: it.url || '', thumb: it.thumb || '', ts: Date.now(), result: 'skipped' });
     await remove(P(`queue/${it.key}`));
   } catch (e) { /* */ }
 }
@@ -245,18 +288,23 @@ onValue(P('control'), (snap) => {
   const c = snap.val() || {};
   volume = Number.isFinite(c.volume) ? c.volume : 50;
   try { if (ytReady) ytPlayer.setVolume(volume); } catch (e) { /* */ }
+  try { if (scw) scw.setVolume(volume); } catch (e) { /* */ }
   const wasPaused = paused, wasStopped = stopped;
   paused = c.paused === true; stopped = c.stopped === true;
   if (stopped && !wasStopped) { returnCurrent(); }
   else if (!stopped && wasStopped) { tick(); }
   if (paused !== wasPaused && cur) {
-    try { if (ytReady) { if (paused) ytPlayer.pauseVideo(); else ytPlayer.playVideo(); } } catch (e) { /* */ }
+    try {
+      if (cur.item.src === 'sc') { if (scw) { if (paused) scw.pause(); else scw.play(); } }
+      else if (ytReady) { if (paused) ytPlayer.pauseVideo(); else ytPlayer.playVideo(); }
+    } catch (e) { /* */ }
   }
   if (lastCmd === null) lastCmd = c.cmd ? c.cmd.n : 0;
   else if (c.cmd && c.cmd.n !== lastCmd) { lastCmd = c.cmd.n; runCmd(c.cmd); }
   render();
 });
 onValue(P('widget'), (snap) => applyWidget(snap.val()));
+onValue(P('cfg'), (snap) => { const c = snap.val() || {}; maxDurMin = Number.isFinite(c.maxDurationMin) ? c.maxDurationMin : 10; });
 onValue(P('fb'), (s) => { fb = s.val() || {}; maybeFallback(); });
 onValue(P('playlists'), (s) => { playlists = s.val() || {}; maybeFallback(); });
 onValue(P('bans'), (s) => { bans = s.val() || {}; });
