@@ -8,7 +8,7 @@ export const config = {
   // Запасные адреса того же бота (например, прокси на Cloudflare Workers для тех, у кого основной адрес
   // не открывается, как у части пользователей из России). Кабинет сам выберет рабочий.
   // Пример: ['https://botyara-proxy.ваш-ник.workers.dev']. Пустой список = только основной адрес.
-  apiUrls: ['https://botyara.dj-panel.workers.dev'],
+  apiUrls: ['https://botyara-666.dj-panel.workers.dev'],
 
   // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
   redirectUri: 'https://hotmail-585.github.io/Botyara_666/',
