@@ -4,6 +4,7 @@
 export const config = {
   // Адрес API бота (HTTPS-домен хостинга: bot-hosting.net → Domains). Без слеша в конце.
   apiUrl: 'https://c06poca4kr.apps.bot-hosting.cloud',
+  apiUrls: ['botyara.dj-panel.workers.dev'],
 
   // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
   redirectUri: 'https://hotmail-585.github.io/Botyara_666/',
