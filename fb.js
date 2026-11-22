@@ -4,7 +4,12 @@
 
 const SESSION_KEY = 'bot_session';
 
+const BASE_KEY = 'bot_api_base';
 let apiUrl = '';
+let bases = [];               // все известные адреса бота (основной и запасные через прокси)
+let baseFails = 0;
+let probed = false;           // уже выбирали рабочий адрес из нескольких
+let probing = false;
 let session = null;           // { session, uid, login, exp }
 let playerKey = '';           // ключ плеера (ссылка для OBS): даёт доступ к musicPlayer/{ключ} без входа
 let ws = null;                // активный транспорт: { send(msg), close() }
@@ -45,21 +50,29 @@ function openWebSocket(onMsg, onOpen, onClose) {
 }
 
 function openSse(onMsg, onOpen, onClose) {
+  const base = apiUrl;
   const cid = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
-  const es = new EventSource(`${apiUrl}/events?cid=${cid}`);
+  const es = new EventSource(`${base}/events?cid=${cid}`);
   let opened = false;
   es.onopen = () => { opened = true; onOpen(); };
   es.onmessage = (ev) => { try { onMsg(JSON.parse(ev.data)); } catch { /* */ } };
   es.onerror = () => { try { es.close(); } catch { /* */ } onClose(opened); };
   return {
-    send: (m) => { fetch(`${apiUrl}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, msg: m }) }).catch(() => {}); },
+    send: (m) => { fetch(`${base}/rpc`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cid, msg: m }) }).catch(() => {}); },
     close: () => { try { es.close(); } catch { /* */ } },
   };
 }
 
 // ---------- Соединение ----------
 function connect() {
-  if (state !== 'idle' || !apiUrl) return;
+  if (state !== 'idle' || !apiUrl || probing) return;
+  if (bases.length > 1 && !probed) {
+    // Адресов несколько: сначала быстро выбираем тот, что отвечает (страницы OBS не читают настройки сами)
+    probed = true;
+    probing = true;
+    getPublicConfig().catch(() => {}).then(() => { probing = false; connect(); });
+    return;
+  }
   state = 'connecting';
   const opener = useSse ? openSse : openWebSocket;
   let transport = null;
@@ -69,6 +82,7 @@ function connect() {
     state = 'open';
     everOpened = true;
     wsFails = 0;
+    baseFails = 0;
     backoff = 1000;
     if (session) ws.send({ t: 'auth', token: session.session });
     if (playerKey) ws.send({ t: 'key', key: playerKey });
@@ -83,6 +97,11 @@ function connect() {
     if (!wasOpen && !everOpened && !useSse) {
       wsFails += 1;
       if (wsFails >= 2) { useSse = true; wsFails = 0; }
+    }
+    if (!wasOpen) {
+      // Адрес не отвечает несколько раз подряд: пробуем следующий запасной
+      baseFails += 1;
+      if (bases.length > 1 && baseFails >= 3) { nextBase(); baseFails = 0; wsFails = 0; useSse = false; }
     }
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connect, backoff);
@@ -132,13 +151,35 @@ async function request(msg) {
 }
 
 // ---------- Публичный интерфейс (как у Firebase) ----------
+const cleanUrl = (u) => String(u || '').trim().replace(/\/+$/, '');
+
+function rememberBase(b) {
+  try { localStorage.setItem(BASE_KEY, b); } catch { /* не страшно */ }
+}
+
+function nextBase() {
+  const i = bases.indexOf(apiUrl);
+  apiUrl = bases[(i + 1) % bases.length];
+  rememberBase(apiUrl);
+}
+
+// url: один адрес или список (основной первым). Запомненный рабочий адрес пробуется первым.
 export function initApi(url) {
-  apiUrl = String(url || '').replace(/\/+$/, '');
+  bases = [...new Set((Array.isArray(url) ? url : [url]).map(cleanUrl).filter(Boolean))];
+  apiUrl = bases[0] || '';
+  try {
+    const saved = cleanUrl(localStorage.getItem(BASE_KEY));
+    if (saved && bases.includes(saved)) apiUrl = saved;
+  } catch { /* */ }
   session = storeGet();
   if (session && session.exp < Date.now()) { session = null; storeSet(null); }
 }
 
 export function startConnection() { connect(); }
+
+// Адрес бота, который сейчас используется (для запросов вне этого файла).
+export function apiBase() { return apiUrl; }
+export function apiBases() { return bases.slice(); }
 
 export function currentSession() { return session ? { uid: session.uid, login: session.login } : null; }
 
@@ -146,10 +187,16 @@ export function onSessionChange(fn) { authListeners.add(fn); return () => authLi
 
 // Меняет токен Twitch (из адресной строки после входа) на сессию бота.
 export async function loginWithTwitch(accessToken) {
-  let res;
-  try {
-    res = await fetch(`${apiUrl}/auth/twitch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken }) });
-  } catch (e) { throw apiError('unavailable', 'Нет связи с сервером бота'); }
+  let res = null;
+  const order = [apiUrl, ...bases.filter((b) => b !== apiUrl)];
+  for (const b of order) {
+    try {
+      res = await fetch(`${b}/auth/twitch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ accessToken }) });
+      if (b !== apiUrl && state !== 'open') { apiUrl = b; rememberBase(b); }
+      break;
+    } catch (e) { /* пробуем следующий адрес */ }
+  }
+  if (!res) throw apiError('unavailable', 'Нет связи с сервером бота');
   let body = null;
   try { body = await res.json(); } catch { /* */ }
   if (!res.ok || !body || !body.session) throw apiError((body && body.error) || `http_${res.status}`, 'Вход не удался');
@@ -253,8 +300,43 @@ export function setPlayerKey(k) {
 }
 
 // Публичные настройки, которые бот сам отдаёт сайту (Client ID Twitch, ник бота, ключ YouTube).
+// Если адресов несколько, спрашиваем их все почти одновременно (запасные с небольшой задержкой)
+// и берём тот, что ответил первым. Выбранный адрес запоминается.
+async function fetchConfigFrom(base, ms, signalList) {
+  const ctl = new AbortController();
+  signalList.push(ctl);
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    const res = await fetch(`${base}/public-config`, { cache: 'no-store', signal: ctl.signal });
+    if (!res.ok) throw apiError(`http_${res.status}`, 'Бот не отдал настройки');
+    const body = await res.json();
+    return { base, body };
+  } finally { clearTimeout(timer); }
+}
+
 export async function getPublicConfig() {
-  const res = await fetch(`${apiUrl}/public-config`, { cache: 'no-store' });
-  if (!res.ok) throw apiError(`http_${res.status}`, 'Бот не отдал настройки');
-  return res.json();
+  probed = true;
+  if (bases.length < 2) {
+    const r = await fetchConfigFrom(apiUrl, 10000, []);
+    return r.body;
+  }
+  const order = [apiUrl, ...bases.filter((b) => b !== apiUrl)];
+  const ctls = [];
+  let done = false;
+  const tries = order.map((b, i) => new Promise((resolve, reject) => {
+    setTimeout(() => { if (done) { reject(apiError('cancelled')); return; } fetchConfigFrom(b, 8000, ctls).then(resolve, reject); }, i === 0 ? 0 : 1200 * i);
+  }));
+  const winner = await new Promise((resolve, reject) => {
+    let left = tries.length;
+    let lastErr = null;
+    for (const t of tries) {
+      t.then(resolve, (e) => { lastErr = e; left -= 1; if (left === 0) reject(lastErr); });
+    }
+  });
+  done = true;
+  for (const c of ctls) { try { c.abort(); } catch { /* */ } }
+  // Адрес меняем только пока соединение не открыто, чтобы не разорвать рабочее
+  if (state !== 'open') apiUrl = winner.base;
+  rememberBase(winner.base);
+  return winner.body;
 }
