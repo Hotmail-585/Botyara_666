@@ -1,7 +1,7 @@
 // Кабинет Twitch-бота. Чистый JS-модуль, без сборки. Данные приходят с сервера бота (fb.js), Firebase не используется.
 import {
   initApi, ref, onValue, set, update, runTransaction, serverTimestamp,
-  loginWithTwitch, currentSession, logoutSession, onSessionChange, getPublicConfig,
+  loginWithTwitch, currentSession, logoutSession, onSessionChange, getPublicConfig, apiBases,
 } from './fb.js';
 
 import { getLang, setLang, locale } from './i18n.js';
@@ -2731,14 +2731,14 @@ async function main() {
   musicRet = consumeMusicReturn();
   if (musicRet) { try { localStorage.setItem(PANEL_KEY, 'music'); } catch { /* */ } }
 
-  initApi(config.apiUrl);
+  initApi([config.apiUrl, ...(config.apiUrls || [])]);
   fillBotName();
   const gotPub = await loadPublicConfig();
   fillBotName();
   if (!PUB.twitchClientId) {
     showFatal(gotPub
       ? 'Бот не передал сайту Client ID Twitch: проверьте TWITCH_CLIENT_ID в файле .env бота и перезапустите бота.'
-      : 'Нет связи с ботом (' + config.apiUrl + '). Проверьте, что бот запущен и адрес apiUrl в config.js верный.');
+      : 'Нет связи с ботом (' + apiBases().join(', ') + '). Проверьте, что бот запущен и адрес apiUrl в config.js верный.');
     return;
   }
 
