@@ -47,7 +47,7 @@ function showMsg(text, info) {
 }
 if (!/^[A-Za-z0-9]{24,48}$/.test(key)) { showMsg('В ссылке нет ключа плеера (параметр k). Скопируйте ссылку из кабинета.'); throw new Error('no key'); }
 
-initApi(config.apiUrl);
+initApi([config.apiUrl, ...(config.apiUrls || [])]);
 setPlayerKey(key);
 startConnection();
 const db = null;
