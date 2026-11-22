@@ -22,9 +22,20 @@
   .item .t { flex:1; min-width:0; } .item .t b { display:block; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .tag { font-size:10px; background:var(--acc); border-radius:4px; padding:1px 5px; margin-left:4px; }
   input[type=range] { flex:1; accent-color:var(--acc); }
+  .tabs { display:flex; gap:6px; margin-bottom:10px; }
+  .tabs button { flex:1; padding:8px 10px; }
+  .tabs button.on { background:var(--acc); border-color:var(--acc); color:#fff; }
+  .tabs .cnt { opacity:.8; font-weight:400; margin-left:4px; }
+  .pane[hidden] { display:none; }
+  .item .t b.wrap { white-space:normal; word-break:break-word; }
 </style>
 </head>
 <body>
+<div class="tabs">
+  <button id="tabMain" class="on">Музыка</button>
+  <button id="tabBans">Баны<span class="cnt" id="banCnt"></span></button>
+</div>
+<div id="paneMain" class="pane">
 <div class="card">
   <h2>Сейчас</h2>
   <div id="title" class="mute">—</div>
@@ -54,6 +65,20 @@
 
 <div class="card"><h2>Очередь</h2><div id="queue" class="mute">пусто</div></div>
 <div class="card"><h2>Последние заказы</h2><div id="log" class="mute">пока нет</div></div>
+</div>
+
+<div id="paneBans" class="pane" hidden>
+  <div class="card">
+    <h2>Забаненные зрители</h2>
+    <div class="row"><input type="text" id="banU" placeholder="ник зрителя"><button class="sm acc" id="banUAdd">Забанить</button></div>
+    <div id="banUList" class="mute">никого нет</div>
+  </div>
+  <div class="card">
+    <h2>Забаненные треки</h2>
+    <div class="row"><input type="text" id="banT" placeholder="ссылка на видео или трек"><button class="sm acc" id="banTAdd">Забанить</button></div>
+    <div id="banTList" class="mute">пусто</div>
+  </div>
+</div>
 
 <script type="module">
   import { t, locale } from './i18n.js';
@@ -75,7 +100,7 @@ const norm = (s) => String(s || '').trim().toLowerCase().replace(/^@/, '');
 const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const cmd = (a, d) => update(P('control'), { cmd: { a, n: Date.now(), ...(d !== undefined ? { d } : {}) } });
 
-onValue(P('queue'), (s) => { const v = s.val() || {}; queue = Object.entries(v).map(([k, x]) => ({ ...x, key: k })).sort((a, b) => a.ts - b.ts); renderQueue(); renderNow(); });
+onValue(P('queue'), (s) => { const v = s.val() || {}; queue = Object.entries(v).map(([k, x]) => ({ ...x, key: k })).sort((a, b) => a.ts - b.ts); rememberTitles(queue); renderQueue(); renderNow(); renderBans(); });
 onValue(P('control'), (s) => {
   control = s.val() || {};
   const v = Number.isFinite(control.volume) ? control.volume : 50;
@@ -140,6 +165,44 @@ $('bRestart').onclick = () => cmd('restart');
 $('vol').oninput = (e) => { $('volN').textContent = e.target.value; };
 $('vol').onchange = (e) => update(P('control'), { volume: Number(e.target.value) });
 setInterval(renderNow, 5000);
+
+
+// ───── вкладки и список банов ─────
+let bans = { users: {}, tracks: {} }, titles = {};
+function showPane(name) {
+  const bansOn = name === 'bans';
+  $('paneMain').hidden = bansOn; $('paneBans').hidden = !bansOn;
+  $('tabMain').classList.toggle('on', !bansOn); $('tabBans').classList.toggle('on', bansOn);
+  try { sessionStorage.setItem('dock_pane', name); } catch (e) { /* */ }
+}
+$('tabMain').onclick = () => showPane('main');
+$('tabBans').onclick = () => showPane('bans');
+try { if (sessionStorage.getItem('dock_pane') === 'bans') showPane('bans'); } catch (e) { /* */ }
+const rememberTitles = (list) => { for (const x of list) if (x && x.id && x.title) titles[x.id] = String(x.title); };
+function renderBans() {
+  const us = Object.keys(bans.users).sort(), ts = Object.keys(bans.tracks).sort();
+  $('banCnt').textContent = us.length + ts.length ? ` (${us.length + ts.length})` : '';
+  $('banUList').className = us.length ? '' : 'mute';
+  $('banUList').innerHTML = us.length ? us.map((k) => `<div class="item"><div class="t"><b class="wrap">${esc(k)}</b></div><button class="sm" data-unu="${esc(k)}">Разбанить</button></div>`).join('') : 'никого нет';
+  $('banTList').className = ts.length ? '' : 'mute';
+  $('banTList').innerHTML = ts.length ? ts.map((k) => `<div class="item"><div class="t"><b class="wrap">${esc(titles[k] || k)}</b>${titles[k] ? `<span class="mute">${esc(k)}</span>` : ''}</div><button class="sm" data-unt="${esc(k)}">Разбанить</button></div>`).join('') : 'пусто';
+}
+onValue(P('bans'), (s) => { const v = s.val() || {}; bans = { users: v.users || {}, tracks: v.tracks || {} }; renderBans(); });
+onValue(P('history'), (s) => { rememberTitles(Object.values(s.val() || {})); renderBans(); });
+$('paneBans').addEventListener('click', async (e) => {
+  const d = e.target.dataset;
+  try {
+    if (d.unu) await remove(P(`bans/users/${d.unu}`));
+    if (d.unt) await remove(P(`bans/tracks/${d.unt}`));
+  } catch (err) { alert('Не удалось: ' + err.message); }
+});
+$('banUAdd').onclick = async () => { await banUser($('banU').value); $('banU').value = ''; };
+$('banTAdd').onclick = async () => {
+  const raw = $('banT').value; let id = extractVideoId(raw);
+  if (/soundcloud\.com/i.test(raw)) { try { const r = await fetch(`${String(config.apiUrl).replace(/\/+$/, '')}/sc-info?url=${encodeURIComponent(raw.trim())}`); const d = await r.json(); id = d.error ? null : d.id; if (d.title) titles[d.id] = d.title; } catch (e) { id = null; } }
+  if (!id) return;
+  await banTrack(id); $('banT').value = '';
+};
 
 // ───── ручное добавление ─────
 const extractVideoId = (t) => { const m = String(t).match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([A-Za-z0-9_-]{11})/); return m ? m[1] : (/^[A-Za-z0-9_-]{11}$/.test(String(t).trim()) ? String(t).trim() : null); };
