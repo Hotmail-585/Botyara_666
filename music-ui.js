@@ -1,7 +1,7 @@
 // Вкладка «Музыка» кабинета. Подгружается при первом открытии вкладки (app.js). Данные идут через сервер бота (fb.js).
 import { t, locale } from './i18n.js';
 import { config } from './config.js';
-import { ref, get, set, push, update, remove, serverTimestamp, getPublicConfig } from './fb.js';
+import { ref, get, set, push, update, remove, serverTimestamp, getPublicConfig, apiBase } from './fb.js';
 
 import { onValue as rawOnValue } from './fb.js';
 const $ = (id) => document.getElementById('mu-' + id);
@@ -219,7 +219,7 @@ async function playlistTracks(plId, max) {
   return out;
 }
 async function scInfo(text) {
-  const r = await fetch(`${String(config.apiUrl).replace(/\/+$/, '')}/sc-info?url=${encodeURIComponent(String(text).trim())}`);
+  const r = await fetch(`${apiBase()}/sc-info?url=${encodeURIComponent(String(text).trim())}`);
   return r.json();
 }
 async function addManual() {
