@@ -1456,6 +1456,13 @@ function renderBotState() {
     kvRow(grid, 'Модерация чата (фильтры)', 'нет данных (обновите bot.js и перезапустите бота)');
   }
 
+  const chat = st.chat;
+  if (chat && typeof chat === 'object') {
+    kvRow(grid, 'Сообщения бота (значок «бот»)', chat.viaApi
+      ? `через Twitch API · отправлено: ${chat.sent ?? 0}, через IRC вместо API: ${chat.fallback ?? 0}`
+      : `через IRC, без значка: ${chat.problem || 'причина неизвестна'}`);
+  }
+
   const pr = st.predictions;
   if (pr && typeof pr === 'object') {
     kvRow(grid, 'Предсказания Twitch', pr.configured

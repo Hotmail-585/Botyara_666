@@ -761,6 +761,7 @@ export default {
  "Сообщений в чате по часам за последние 24 часа": "Chat messages per hour over the last 24 hours",
  "Сообщений за 14 дней": "Messages in 14 days",
  "Сообщений за 24 часа": "Messages in 24 hours",
+ "Сообщения бота (значок «бот»)": "Bot messages (bot badge)",
  "Сообщения со ссылками. Сайты из списка разрешены. Одну ссылку конкретному зрителю можно разрешить в чате командой !permit @ник.": "Messages with links. Sites from the list are allowed. You can allow one link for a specific viewer in chat with the !permit @nickname command.",
  "Сообщения, где встречается слово или фраза из списка (регистр и «ё» не важны, ищется внутри слова).": "Messages containing a word or phrase from the list (case and «ё» don't matter, matched inside words).",
  "Сообщения, где слишком много заглавных букв. Короткие сообщения (меньше указанного числа букв) не проверяются.": "Messages with too many capital letters. Short messages (fewer letters than the set number) aren't checked.",
@@ -991,6 +992,8 @@ export default {
  "только что": "just now",
  "трек SoundCloud не найден или закрыт": "SoundCloud track not found or private",
  "у вас уже много треков в очереди": "you already have too many tracks in the queue",
+ "через IRC, без значка: {0}": "via IRC, no badge: {0}",
+ "через Twitch API · отправлено: {0}, через IRC вместо API: {1}": "via Twitch API · sent: {0}, via IRC instead of API: {1}",
  "этот трек в бане": "this track is banned",
  "↺ Сначала": "↺ From the start",
  "⏪ −10 с": "⏪ −10 s",
@@ -1000,5 +1003,5 @@ export default {
  "⏹ Стоп": "⏹ Stop",
  "▶ Дальше": "▶ Next",
  "▶ Играть": "▶ Play",
- "▶ дальше": "▶ next"
+ "▶ дальше": "▶ next",
 };
