@@ -13,10 +13,6 @@ export const config = {
   // Канонический адрес сайта = OAuth Redirect URL в приложении Twitch.
   redirectUri: 'https://hotmail-585.github.io/Botyara_666/',
 
-  // Необязательно: запасные значения на случай, если бот недоступен. Обычно оставьте пустыми.
-  twitchClientId: '',
-  botName: '',
-
   // Сколько авто-сообщений бот использует по умолчанию (MAX_TIMERS в боте).
   botTimersLimit: 20,
 
