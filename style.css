@@ -241,6 +241,30 @@ ul.plain { padding-left: 20px; display: grid; gap: 8px; margin: 8px 0; }
 
 .editor { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--border); display: grid; gap: 10px; }
 
+/* Подсказки «i»: длинные пояснения свёрнуты */
+details.info { margin: 4px 0 8px; }
+details.info > summary {
+  list-style: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); color: var(--muted);
+  font: italic 700 .75rem/1 Georgia, serif; user-select: none;
+}
+details.info > summary::-webkit-details-marker { display: none; }
+details.info > summary:hover, details.info[open] > summary { color: var(--text); border-color: var(--muted); }
+details.info > p { margin: 8px 0 0; }
+
+/* Экран ошибки */
+.err-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.err-code {
+  font: 700 .95rem/1 ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  padding: 6px 10px; border-radius: 8px; color: var(--danger); border: 1px solid var(--danger); letter-spacing: .04em;
+}
+.err-text { font-size: 1.05rem; margin: 6px 0 10px; }
+.err-info {
+  margin: 0 0 14px; padding: 10px 12px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--border);
+  color: var(--muted); font: .82rem/1.5 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all;
+}
+.err-info:empty { display: none; }
+
 /* Уведомление */
 .toast {
   position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
