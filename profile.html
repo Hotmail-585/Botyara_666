@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <meta name="referrer" content="no-referrer">
+  <title>Профиль зрителя</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <script>
+    try { var l = localStorage.getItem('bot_lang'); if (!l) { var n = String(navigator.language || 'ru').toLowerCase(); l = n.indexOf('uk') === 0 ? 'uk' : (n.indexOf('ru') === 0 || n.indexOf('be') === 0) ? 'ru' : 'en'; }
+      if (l !== 'ru') { document.documentElement.style.visibility = 'hidden'; setTimeout(function () { document.documentElement.style.visibility = ''; }, 3000); } } catch (e) { /* не страшно */ }
+  </script>
+  <script>
+    try { var t = localStorage.getItem('bot_theme'); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) { /* не страшно */ }
+  </script>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="profile.css">
+  <script type="module" src="profile.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="wrap row between">
+      <a class="pf-title" href="./" aria-label="Кабинет">Профиль зрителя</a>
+      <div class="row">
+        <button id="themeBtn" class="pf-theme" type="button" aria-label="Тема" title="Светлая / тёмная тема">◐</button>
+      </div>
+    </div>
+  </header>
+  <main class="wrap pf">
+    <form id="pfForm" class="card pf-search">
+      <label class="field"><span>Канал</span><input id="pfChan" type="text" maxlength="25" placeholder="ник стримера" autocapitalize="off" autocomplete="off"></label>
+      <label class="field"><span>Зритель</span><input id="pfUser" type="text" maxlength="25" placeholder="ник зрителя" autocapitalize="off" autocomplete="off"></label>
+      <button class="btn primary" type="submit">Показать</button>
+    </form>
+
+    <p id="pfMsg" class="card muted" hidden></p>
+
+    <section id="pfProfile" hidden>
+      <div class="card pf-head">
+        <div id="pfAvatar" class="pf-avatar" aria-hidden="true"></div>
+        <div class="pf-who">
+          <h1 id="pfName" translate="no"></h1>
+          <p class="muted">Канал <b id="pfChanName" translate="no"></b></p>
+        </div>
+        <div id="pfRank" class="pf-rank" hidden>
+          <small>Ранг Valorant</small>
+          <b id="pfRankName" translate="no"></b>
+          <span id="pfRankId" class="muted" translate="no"></span>
+        </div>
+      </div>
+      <div id="pfTiles" class="pf-tiles"></div>
+      <div class="card">
+        <div class="row between"><h2>Достижения</h2><span id="pfAchCount" class="pill"></span></div>
+        <div id="pfAch" class="pf-ach"></div>
+      </div>
+    </section>
+
+    <section id="pfBoards" class="pf-boards" hidden>
+      <div class="card"><h2>Топ по очкам</h2><ol id="pfTopPts" class="pf-list"></ol></div>
+      <div class="card"><h2>Топ по рангу</h2><ol id="pfTopRank" class="pf-list"></ol></div>
+    </section>
+  </main>
+</body>
+</html>
