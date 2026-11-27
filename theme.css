@@ -325,7 +325,6 @@ html:not([data-fx="off"]) #fxBtn { color: var(--accent-ink); }
 
 /* ---------- Компактный масштаб на ПК (как 80% в браузере) ---------- */
 @media (min-width: 861px) {
-  html { zoom: .8; }
   main.wrap.wide-cab, body.cab-wide .topbar .wrap, body.cab-wide .foot { max-width: 1500px; }
   .cab { grid-template-columns: 124px minmax(0, 1fr); }
   .side { top: 70px; max-height: calc(100vh / .8 - 88px); scrollbar-width: thin; }
