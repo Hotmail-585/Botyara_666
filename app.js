@@ -2796,6 +2796,7 @@ function bindUi() {
 }
 
 async function main() {
+  window.__botReady = true;
   bindUi();
   showView('loading');
 
