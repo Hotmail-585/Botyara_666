@@ -307,23 +307,12 @@ async function fetchConfigFrom(base, ms, signalList) {
   signalList.push(ctl);
   const timer = setTimeout(() => ctl.abort(), ms);
   try {
-    let res;
-    try { res = await fetch(`${base}/public-config`, { cache: 'no-store', signal: ctl.signal }); }
-    catch (e) { throw apiError(e?.name === 'AbortError' ? 'timeout' : 'network', 'Нет ответа'); }
+    const res = await fetch(`${base}/public-config`, { cache: 'no-store', signal: ctl.signal });
     if (!res.ok) throw apiError(`http_${res.status}`, 'Бот не отдал настройки');
-    let body;
-    try { body = await res.json(); } catch { throw apiError('bad_json', 'Неверный ответ'); }
-    delete probeErrors[base];
+    const body = await res.json();
     return { base, body };
-  } catch (e) {
-    probeErrors[base] = e?.code || 'error';
-    throw e;
   } finally { clearTimeout(timer); }
 }
-
-// Причины, по которым адреса не ответили (для экрана ошибки E101)
-const probeErrors = {};
-export function apiProbeErrors() { return { ...probeErrors }; }
 
 export async function getPublicConfig() {
   probed = true;

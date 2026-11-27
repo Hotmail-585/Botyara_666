@@ -24,7 +24,6 @@
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
     <defs>
-      <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></symbol>
       <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h5v-6h4v6h5V10"/></symbol>
       <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/></symbol>
       <symbol id="i-chat" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.5 7.2L3 21l1.8-5.5A8 8 0 1 1 21 12z"/></symbol>
@@ -97,17 +96,10 @@
     </section>
 
     <!-- Ошибка настройки / сети -->
-    <section id="view-error" class="view card err-card" hidden>
-      <div class="err-head">
-        <h2>Ошибка</h2>
-        <span id="errorCode" class="err-code" translate="no"></span>
-      </div>
-      <p id="errorText" class="err-text"></p>
-      <pre id="errorInfo" class="err-info" translate="no"></pre>
-      <div class="row">
-        <button id="errorRetry" class="btn primary" type="button">Попробовать снова</button>
-        <button id="errorCopy" class="btn" type="button">Скопировать данные</button>
-      </div>
+    <section id="view-error" class="view card" hidden>
+      <h2>Что-то пошло не так</h2>
+      <p id="errorText" class="muted"></p>
+      <button id="errorRetry" class="btn primary" type="button">Попробовать снова</button>
     </section>
 
     <!-- Вход -->
@@ -116,6 +108,7 @@
         <div class="lg-card">
           <span class="lg-logo"><img src="logo.png" alt="" width="64" height="64"></span>
           <h1>Бот для вашего Twitch-канала</h1>
+          <p class="lg-sub">Ранг Valorant, свои команды, фильтры чата, очки и музыка за баллы. Всё настраивается здесь.</p>
           <button id="loginBtn" class="btn twitch lg-btn" type="button">
             <svg class="ico" aria-hidden="true"><use href="#i-twitch"/></svg>Войти через Twitch
           </button>
@@ -140,6 +133,7 @@
     <section id="view-linking" class="view center card" hidden>
       <div class="spinner" aria-hidden="true"></div>
       <h2>Подключаем ваш аккаунт…</h2>
+      <p class="muted">Ждём ответа бота. Обычно это занимает несколько секунд.</p>
     </section>
 
     <!-- Привязка не удалась -->
@@ -200,7 +194,6 @@
           <button class="navbtn" type="button" data-nav="music" hidden><svg class="ico" aria-hidden="true"><use href="#i-music"/></svg><span>Музыка</span></button>
           <div id="navGroupManage" class="navgroup">Управление</div>
           <button class="navbtn" type="button" data-nav="mods"><svg class="ico" aria-hidden="true"><use href="#i-users"/></svg><span>Модераторы</span></button>
-          <button id="navMore" class="navbtn navmore" type="button" aria-expanded="false" aria-controls="sideNav"><svg class="ico" aria-hidden="true"><use href="#i-grid"/></svg><span>Ещё</span></button>
         </nav>
 
         <div class="content">
@@ -264,13 +257,14 @@
               </div>
               <div id="statChart" class="chartbox"></div>
               <p id="statChartEmpty" class="empty" hidden>За этот период сообщений нет.</p>
+              <p class="hint">Время показано по часовому поясу вашего браузера. Наведите курсор на столбик, чтобы увидеть точное число.</p>
             </div>
 
             <div class="card">
               <h2>Самые активные зрители <span id="chatTopTotal" class="muted small"></span></h2>
               <ol id="chatTop" class="toplist"></ol>
               <p id="chatTopEmpty" class="empty" hidden>Пока нет данных.</p>
-              <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="hint">Считаются сообщения зрителей и модераторов, пока бот на канале включён, за всё время с обновления бота. Сообщения, удалённые фильтрами, и сообщения известных ботов (nightbot, streamelements и других) не учитываются. В списке хранятся самые активные зрители (до 1500), в графике 14 суток.</p></details>
+              <p class="hint">Считаются сообщения зрителей и модераторов, пока бот на канале включён, за всё время с обновления бота. Сообщения, удалённые фильтрами, и сообщения известных ботов (nightbot, streamelements и других) не учитываются. В списке хранятся самые активные зрители (до 1500), в графике 14 суток.</p>
             </div>
           </div>
 
@@ -279,6 +273,7 @@
       <!-- Valorant -->
       <form id="valorantForm" class="card" novalidate>
         <h2>Аккаунт Valorant</h2>
+        <p class="muted">Бот показывает ранг этого аккаунта по команде <code>!rank</code>.</p>
         <div class="grid3">
           <label class="field">
             <span>Ник</span>
@@ -298,7 +293,7 @@
             </select>
           </label>
         </div>
-        <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="hint">Сайт проверяет только формат. Существует ли такой аккаунт, видно по ответу бота: если ошибиться, <code>!rank</code> ответит «Аккаунт не найден».</p></details>
+        <p class="hint">Сайт проверяет только формат. Существует ли такой аккаунт, видно по ответу бота: если ошибиться, <code>!rank</code> ответит «Аккаунт не найден».</p>
         <p id="vError" class="error" hidden></p>
         <button id="vSave" class="btn primary" type="submit">Сохранить аккаунт</button>
       </form>
@@ -306,7 +301,7 @@
       <!-- Несколько аккаунтов -->
       <div id="accCard" class="card">
         <h2>Несколько аккаунтов Valorant</h2>
-        <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">Основной аккаунт задан в форме выше. Команды <code>!rank</code>, <code>!peak</code>, <code>!lastgame</code> и <code>!today</code> показывают <strong>активный</strong> аккаунт. Переключать его можно здесь или в чате командой <code>!acc 2</code> (модератор).</p></details>
+        <p class="muted">Основной аккаунт задан в форме выше. Команды <code>!rank</code>, <code>!peak</code>, <code>!lastgame</code> и <code>!today</code> показывают <strong>активный</strong> аккаунт. Переключать его можно здесь или в чате командой <code>!acc 2</code> (модератор).</p>
         <ul id="accList" class="list"></ul>
         <form id="accForm" class="editor" novalidate>
           <h3>Добавить аккаунт</h3>
@@ -342,7 +337,7 @@
       <!-- Команды -->
       <div class="card">
         <h2>Свои команды</h2>
-        <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">Зритель пишет команду, бот отвечает текстом. Для каждой команды можно выбрать, кто её вызывает, кулдаун и алиасы (другие названия той же команды).</p></details>
+        <p class="muted">Зритель пишет команду, бот отвечает текстом. Для каждой команды можно выбрать, кто её вызывает, кулдаун и алиасы (другие названия той же команды).</p>
         <ul id="cmdList" class="list"></ul>
         <p id="cmdEmpty" class="empty" hidden>Пока нет ни одной команды.</p>
         <form id="cmdForm" class="editor" novalidate>
@@ -355,7 +350,7 @@
             <span>Ответ бота <small id="cmdCount" class="counter"></small></span>
             <textarea id="cmdText" rows="3" maxlength="400" placeholder="Заходи к нам в Discord: https://… , {user}!"></textarea>
           </label>
-          <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="hint">Переменные в тексте: <code>{user}</code> ник написавшего, <code>{touser}</code> первое слово после команды (например <code>!hug @ник</code>; если его нет, то ник написавшего), <code>{args}</code> весь текст после команды, <code>{count}</code> сколько раз вызвали команду, <code>{channel}</code> название канала, <code>{random 1-100}</code> случайное число. Авто-сообщения отправляются как есть, без переменных.</p></details>
+          <p class="hint">Переменные в тексте: <code>{user}</code> ник написавшего, <code>{touser}</code> первое слово после команды (например <code>!hug @ник</code>; если его нет, то ник написавшего), <code>{args}</code> весь текст после команды, <code>{count}</code> сколько раз вызвали команду, <code>{channel}</code> название канала, <code>{random 1-100}</code> случайное число. Авто-сообщения отправляются как есть, без переменных.</p>
           <div class="grid3">
             <label class="field">
               <span>Кто может вызывать</span>
@@ -375,7 +370,7 @@
               <input id="cmdAliases" type="text" autocomplete="off" spellcheck="false" placeholder="!ds, !дис">
             </label>
           </div>
-          <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="hint">Кулдаун общий для всего чата (0: без ограничений, пусто: 5 секунд). Стример и модераторы проходят проверку «кто может вызывать» всегда. «Подписчики и выше» включает VIP, модераторов и стримера.</p></details>
+          <p class="hint">Кулдаун общий для всего чата (0: без ограничений, пусто: 5 секунд). Стример и модераторы проходят проверку «кто может вызывать» всегда. «Подписчики и выше» включает VIP, модераторов и стримера.</p>
           <div id="cmdPreview" class="preview" aria-label="Предпросмотр в чате" hidden></div>
           <p id="cmdError" class="error" hidden></p>
           <div class="row gap">
@@ -395,6 +390,7 @@
         <div class="row between">
           <div>
             <h2>Авто-сообщения</h2>
+            <p class="muted">Бот сам пишет эти сообщения в чат по очереди.</p>
           </div>
           <label class="switch">
             <input id="timerToggle" type="checkbox">
@@ -440,7 +436,7 @@
             <div class="card row between">
               <div>
                 <h2>Фильтры чата</h2>
-                <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">Бот проверяет сообщения зрителей и удаляет их или выдаёт таймаут. Стример и модераторы канала никогда не проверяются. В чате модератор может переключать всё сразу: <code>!filters on</code> / <code>!filters off</code>, а <code>!permit @ник</code> разрешает человеку одну ссылку на 60 секунд.</p></details>
+                <p class="muted">Бот проверяет сообщения зрителей и удаляет их или выдаёт таймаут. Стример и модераторы канала никогда не проверяются. В чате модератор может переключать всё сразу: <code>!filters on</code> / <code>!filters off</code>, а <code>!permit @ник</code> разрешает человеку одну ссылку на 60 секунд.</p>
               </div>
               <label class="switch">
                 <input id="filtersToggle" type="checkbox">
@@ -455,7 +451,7 @@
 
             <form id="filtersForm" class="card" novalidate>
               <h2>Настройки фильтров</h2>
-              <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">У каждого фильтра свой переключатель. Действие «таймаут» использует длительность, а при действии «удалить» длительность не применяется (но поле всё равно должно быть заполнено).</p></details>
+              <p class="muted">У каждого фильтра свой переключатель. Действие «таймаут» использует длительность, а при действии «удалить» длительность не применяется (но поле всё равно должно быть заполнено).</p>
               <div id="filterBlocks"></div>
               <p id="filtersError" class="error" hidden></p>
               <button id="filtersSave" class="btn primary" type="submit">Сохранить фильтры</button>
@@ -467,7 +463,7 @@
             <div class="card row between">
               <div>
                 <h2>Мини-игры в чате</h2>
-                <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">Включают команды ниже для всех зрителей. У зрителей есть кулдаун, чтобы не засорять чат. В чате модератор может переключать: <code>!games on</code> / <code>!games off</code>.</p></details>
+                <p class="muted">Включают команды ниже для всех зрителей. У зрителей есть кулдаун, чтобы не засорять чат. В чате модератор может переключать: <code>!games on</code> / <code>!games off</code>.</p>
               </div>
               <label class="switch">
                 <input id="gamesToggle" type="checkbox">
@@ -478,7 +474,7 @@
             <div class="card row between">
               <div>
                 <h2>Русская рулетка</h2>
-                <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted"><code>!roulette</code>: с шансом 1 из 6 зритель получает таймаут на 30 секунд (модераторам ничего не будет). Нужно, чтобы бот был модератором канала. Выключено по умолчанию. В чате: <code>!games roulette on</code> / <code>off</code>.</p></details>
+                <p class="muted"><code>!roulette</code>: с шансом 1 из 6 зритель получает таймаут на 30 секунд (модераторам ничего не будет). Нужно, чтобы бот был модератором канала. Выключено по умолчанию. В чате: <code>!games roulette on</code> / <code>off</code>.</p>
               </div>
               <label class="switch">
                 <input id="rouletteToggle" type="checkbox">
@@ -507,7 +503,7 @@
             <div class="card row between">
               <div>
                 <h2>Очки зрителей</h2>
-                <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">Свои очки бота на этом канале (это не баллы канала Twitch). Зрители копят их за активность в чате и тратят на ставки и награды. В чате модератор может переключать: <code>!pts on</code> / <code>!pts off</code>. Выключение не стирает балансы.</p></details>
+                <p class="muted">Свои очки бота на этом канале (это не баллы канала Twitch). Зрители копят их за активность в чате и тратят на ставки и награды. В чате модератор может переключать: <code>!pts on</code> / <code>!pts off</code>. Выключение не стирает балансы.</p>
               </div>
               <label class="switch">
                 <input id="pointsToggle" type="checkbox">
@@ -536,7 +532,7 @@
                   <input id="ptsMaxBet" type="text" inputmode="numeric" autocomplete="off">
                 </label>
               </div>
-              <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="hint">Очки за активность зритель получает за сообщение в чате не чаще, чем раз в указанное число минут. Ежедневный бонус (<code>!daily</code>) растёт за серию дней подряд (до +70%).</p></details>
+              <p class="hint">Очки за активность зритель получает за сообщение в чате не чаще, чем раз в указанное число минут. Ежедневный бонус (<code>!daily</code>) растёт за серию дней подряд (до +70%).</p>
               <p id="pointsError" class="error" hidden></p>
               <button id="pointsSave" class="btn primary" type="submit">Сохранить настройки</button>
             </form>
@@ -567,7 +563,7 @@
           <div id="panel-pred" class="panel" data-panel="pred" hidden>
             <div class="card">
               <h2>Предсказания Twitch</h2>
-              <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">Бот запускает на стриме обычное предсказание Twitch: зрители ставят баллы канала. Итог выбирает модератор или стример командой в чате, либо бот сам по окончании матча (по данным HenrikDev).</p></details>
+              <p class="muted">Бот запускает на стриме обычное предсказание Twitch: зрители ставят баллы канала. Итог выбирает модератор или стример командой в чате, либо бот сам по окончании матча (по данным HenrikDev).</p>
               <p><strong>Статус:</strong> <span id="predStatus">загрузка…</span></p>
               <p id="predBusy" class="hint" hidden></p>
               <p id="predError" class="error" hidden></p>
@@ -576,7 +572,7 @@
                 <button id="predDisconnect" class="btn danger" type="button" hidden>Отключить</button>
               </div>
               <p id="predOwnerNote" class="hint" hidden>Подключить или отключить предсказания может только владелец канала. Модераторы кабинета видят статус.</p>
-              <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="hint">Нужно один раз разрешить боту управлять предсказаниями: откроется страница Twitch с запросом права «channel:manage:predictions». Разрешение можно отозвать здесь или в настройках Twitch (Подключения). Работает только на каналах со статусом партнёра или компаньона Twitch.</p></details>
+              <p class="hint">Нужно один раз разрешить боту управлять предсказаниями: откроется страница Twitch с запросом права «channel:manage:predictions». Разрешение можно отозвать здесь или в настройках Twitch (Подключения). Работает только на каналах со статусом партнёра или компаньона Twitch.</p>
             </div>
 
             <div class="card">
@@ -588,7 +584,7 @@
                 <li>Итог: <code>!pred win</code> или <code>!pred lose</code> вручную, либо <code>!pred auto</code>: бот сам выберет исход, когда HenrikDev покажет новую завершённую игру активного аккаунта (включайте во время матча; данные могут появиться с задержкой).</li>
                 <li><code>!pred cancel</code>: отменить, баллы вернутся зрителям.</li>
               </ul>
-              <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="hint">Ставки и выплаты делает сам Twitch. Если предсказание завершить на Twitch вручную, бот это заметит. Забытое предсказание бот отменяет через 6 часов.</p></details>
+              <p class="hint">Ставки и выплаты делает сам Twitch. Если предсказание завершить на Twitch вручную, бот это заметит. Забытое предсказание бот отменяет через 6 часов.</p>
             </div>
           </div>
 
@@ -596,7 +592,7 @@
           <div id="panel-shop" class="panel" data-panel="shop" hidden>
             <div class="card">
               <h2>Награды за очки</h2>
-              <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">Зритель пишет <code>!buy номер</code>, очки списываются, а заказ появляется ниже и в чате. Выдаёте награду вы сами, затем нажимаете «Выполнено». До 10 позиций.</p></details>
+              <p class="muted">Зритель пишет <code>!buy номер</code>, очки списываются, а заказ появляется ниже и в чате. Выдаёте награду вы сами, затем нажимаете «Выполнено». До 10 позиций.</p>
               <ol id="shopList" class="list numbered"></ol>
               <p id="shopEmpty" class="empty" hidden>Пока нет ни одной награды.</p>
               <form id="shopForm" class="editor" novalidate>
@@ -621,7 +617,7 @@
 
             <div class="card">
               <h2>Заказы</h2>
-              <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">Зрители, которые уже заплатили очками. Когда выдали награду, нажмите «Выполнено»: заказ исчезнет. Если невыполненных заказов 50, покупки приостанавливаются.</p></details>
+              <p class="muted">Зрители, которые уже заплатили очками. Когда выдали награду, нажмите «Выполнено»: заказ исчезнет. Если невыполненных заказов 50, покупки приостанавливаются.</p>
               <ul id="orderList" class="list"></ul>
               <p id="orderEmpty" class="empty" hidden>Невыполненных заказов нет.</p>
             </div>
@@ -632,7 +628,7 @@
       <!-- Модераторы кабинета (только владелец канала) -->
       <div id="modsCard" class="card">
         <h2>Модераторы кабинета</h2>
-        <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">Добавьте человека по нику Twitch, и он сможет войти на этот сайт под своим аккаунтом (вход через Twitch) и управлять вашим ботом: команды, авто-сообщения, фильтры, аккаунты Valorant, игры, кнопка «Тест». Удалить канал и управлять списком модераторов может только владелец.</p></details>
+        <p class="muted">Добавьте человека по нику Twitch, и он сможет войти на этот сайт под своим аккаунтом (вход через Twitch) и управлять вашим ботом: команды, авто-сообщения, фильтры, аккаунты Valorant, игры, кнопка «Тест». Удалить канал и управлять списком модераторов может только владелец.</p>
         <ul id="modList" class="list"></ul>
         <p id="modEmpty" class="empty" hidden>Модераторов пока нет.</p>
         <form id="modForm" class="row gap end" novalidate>
@@ -771,7 +767,7 @@
         <div class="row between">
           <div>
             <h2>Оповещения</h2>
-            <details class="info"><summary title="Подробнее" aria-label="Подробнее">i</summary><p class="muted">Важные события: упал Twitch или HenrikDev, ключ отклонён, канал отключён, у бота нет прав на модерацию. Сайт показывает их, пока открыт в браузере. Если бот упал совсем, он не сможет написать об этом сам: тогда вверху будет «Бот не отвечает».</p></details>
+            <p class="muted">Важные события: упал Twitch или HenrikDev, ключ отклонён, канал отключён, у бота нет прав на модерацию. Сайт показывает их, пока открыт в браузере. Если бот упал совсем, он не сможет написать об этом сам: тогда вверху будет «Бот не отвечает».</p>
           </div>
           <button id="notifyBtn" class="btn small" type="button" hidden>Уведомления в браузере</button>
         </div>
@@ -791,6 +787,7 @@
 
       <form id="limitsForm" class="card" novalidate>
         <h2>Лимиты</h2>
+        <p class="muted">Применяются ботом сразу, без перезапуска. Пустое поле: бот использует значение по умолчанию из своих настроек (подсказка в поле).</p>
         <div class="grid4">
           <label class="field tall">
             <span>Максимум каналов</span>
@@ -816,6 +813,7 @@
     </section>
   </main>
 
+  <footer class="wrap foot muted small">Настройки сохраняются сразу и применяются ботом без перезапуска.</footer>
 
   <dialog id="newsDlg" class="sheet" aria-labelledby="newsTitle">
     <div class="sheet-head">

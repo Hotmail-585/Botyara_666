@@ -1,12 +1,11 @@
 // Кабинет Twitch-бота. Чистый JS-модуль, без сборки. Данные приходят с сервера бота (fb.js), Firebase не используется.
 import {
   initApi, ref, onValue, set, update, runTransaction, serverTimestamp,
-  loginWithTwitch, currentSession, logoutSession, onSessionChange, getPublicConfig, apiBases, apiProbeErrors,
+  loginWithTwitch, currentSession, logoutSession, onSessionChange, getPublicConfig, apiBases,
 } from './fb.js';
 
 import { getLang, setLang, locale } from './i18n.js';
 import { config } from './config.js';
-import { ERR, errText } from './errors.js';
 import { CHANGELOG } from './changelog.js';
 import { initMusic, consumeMusicReturn } from './music-ui.js';
 import { QUICK, answer as assistAnswer } from './assistant.js';
@@ -172,20 +171,9 @@ function toast(msg, kind = 'ok') {
   toastTimer = setTimeout(() => { t.hidden = true; }, kind === 'err' ? 6500 : 2500);
 }
 
-// Экран ошибки: короткое описание, код и технические данные (их можно скопировать и прислать).
-let lastErrorDump = '';
-function showFatal(code, info) {
-  const lines = [`код: ${code}`, ...(info || []), `страница: ${location.origin}${location.pathname}`, `время: ${new Date().toISOString()}`];
-  lastErrorDump = lines.join('\n');
-  $('errorCode').textContent = code;
-  $('errorText').textContent = ERR[code] || 'Ошибка.';
-  $('errorInfo').textContent = (info || []).join('\n');
+function showFatal(text) {
+  $('errorText').textContent = text;
   showView('error');
-}
-
-async function copyErrorDump() {
-  const b = $('errorCopy');
-  try { await navigator.clipboard.writeText(lastErrorDump); b.textContent = 'Скопировано'; setTimeout(() => { b.textContent = 'Скопировать данные'; }, 1500); } catch { prompt('Скопируйте данные:', lastErrorDump); }
 }
 
 function el(tag, props = {}, children = []) {
@@ -206,12 +194,16 @@ function setError(id, msg) {
   p.hidden = !msg;
 }
 
-function friendlyError(e) {
+function friendlyError(e, permHint) {
   const code = String(e?.code || '');
   const msg = String(e?.message || '');
-  if (/permission_denied/i.test(code + msg)) return errText('E301');
-  if (/network|unavailable|offline|disconnected/i.test(code + msg)) return errText('E302');
-  return errText('E309', code || msg.slice(0, 40) || 'unknown');
+  if (/permission_denied/i.test(code + msg)) {
+    return permHint || 'Сервер не принял изменение. Возможно, бот отключён от канала (!leave) или данные не прошли проверку. Если вы только что обновляли сайт, проверьте, что бот тоже обновлён.';
+  }
+  if (/network|unavailable|offline|disconnected/i.test(code + msg)) {
+    return 'Нет связи с сервером. Проверьте интернет и попробуйте ещё раз.';
+  }
+  return 'Не удалось сохранить: ' + (code || msg || 'неизвестная ошибка');
 }
 
 async function save(fn, okMsg, permHint) {
@@ -235,7 +227,7 @@ const PUB = { twitchClientId: String(config.twitchClientId || ''), botName: Stri
 
 function configProblem() {
   if (!config.apiUrl || String(config.apiUrl).includes('ВСТАВЬТЕ')) {
-    return 'E100';
+    return 'Сайт ещё не настроен: откройте файл config.js и впишите apiUrl (адрес бота).';
   }
   return null;
 }
@@ -292,24 +284,24 @@ function consumeTwitchReturn() {
   history.replaceState(null, '', location.pathname + location.search);
   const expected = takeOauthState();
   if (p.error) {
-    return { token: null, message: errText('E210') };
+    return { token: null, message: 'Вход через Twitch отменён или не удался.' };
   }
   if (!expected || p.state !== expected) {
-    return { token: null, message: errText('E211') };
+    return { token: null, message: 'Не удалось подтвердить вход (проверка state). Попробуйте войти ещё раз.' };
   }
   if (!p.accessToken || !TOKEN_PATTERN.test(p.accessToken)) {
-    return { token: null, message: errText('E212') };
+    return { token: null, message: 'Twitch вернул неожиданный ответ. Попробуйте войти ещё раз.' };
   }
   return { token: p.accessToken, message: null };
 }
 
 function loginErrorText(e) {
   const code = String(e?.code || '');
-  if (code === 'unavailable') return errText('E201');
-  if (code === 'wrong_app') return errText('E202');
-  if (code === 'invalid_token' || code === 'bad_token') return errText('E203');
-  if (code === 'rate_limited') return errText('E204');
-  return errText('E209', code || String(e?.message || '').slice(0, 40) || 'unknown');
+  if (code === 'unavailable') return 'Нет связи с сервером бота. Возможно, бот сейчас выключен. Попробуйте позже.';
+  if (code === 'wrong_app') return 'Вход выполнен через другое приложение Twitch. Проверьте TWITCH_CLIENT_ID в .env бота: сайт берёт Client ID у бота.';
+  if (code === 'invalid_token' || code === 'bad_token') return 'Twitch не подтвердил вход. Попробуйте войти ещё раз.';
+  if (code === 'rate_limited') return 'Слишком много попыток входа. Подождите минуту.';
+  return 'Не удалось войти: ' + (code || e?.message || 'неизвестная ошибка');
 }
 
 async function startSession() {
@@ -359,7 +351,7 @@ function subscribeUser() {
     (err) => {
       console.error(err);
       if (!S || S.id !== sid) return;
-      showFatal('E103', [`ошибка: ${err?.code || err?.message || 'unknown'}`]);
+      showFatal('Нет доступа к базе данных: ' + (err?.code || err?.message) + '. Проверьте, что бот запущен и обновлён.');
     },
   );
 }
@@ -434,7 +426,7 @@ function subscribeChannel() {
         switchChannel(S.nick);
         return;
       }
-      showFatal('E104', [`канал: ${nick}`, `ошибка: ${err?.code || err?.message || 'unknown'}`]);
+      showFatal('Нет доступа к настройкам канала (' + (err?.code || err?.message) + '). Попробуйте выйти и войти заново.');
     },
   );
 }
@@ -712,7 +704,7 @@ const NEWS_KEY = 'bot_news_seen';
 function currentTheme() {
   const t = document.documentElement.getAttribute('data-theme');
   if (t === 'light' || t === 'dark') return t;
-  return 'dark';
+  return window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
 
 function applyThemeIcon() {
@@ -1761,8 +1753,6 @@ function renderDashboard() {
 
 // ---------- Меню кабинета ----------
 
-const NAV_MAIN = ['overview', 'commands', 'filters', 'points'];
-
 function showPanel(name) {
   if (!PANELS.includes(name) || (name === 'mods' && !isOwn())) name = 'overview';
   S.panel = name;
@@ -1770,13 +1760,8 @@ function showPanel(name) {
   for (const b of document.querySelectorAll('.navbtn')) {
     if (b.dataset.nav === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
-  const sideNav = $('sideNav');
-  sideNav.classList.remove('more-open');
-  document.body.classList.remove('nav-more');
-  $('navMore').setAttribute('aria-expanded', 'false');
-  $('navMore').classList.toggle('active', !NAV_MAIN.includes(name));
-  sideNav.querySelector('[data-nav="mods"]').hidden = !isOwn();
-  sideNav.querySelector('[data-nav="music"]').hidden = false;
+  $('sideNav').querySelector('[data-nav="mods"]').hidden = !isOwn();
+  $('sideNav').querySelector('[data-nav="music"]').hidden = false;
   $('navGroupManage').hidden = !isOwn();
   if (name === 'points' || name === 'overview') { ensurePointsSub(); renderLeaders(); }
   if (name === 'pred') { ensurePredSub(); renderPred(); }
@@ -1798,36 +1783,19 @@ function renderSummary(ch) {
   renderStats(ch);
   const g = $('summary');
   g.replaceChildren();
-  // Плитка ведёт в раздел; у разделов с включателем справа есть мини-переключатель
-  const row = (label, value, panel, state, sw) => {
-    const kids = [
-      el('span', { class: 'sum-k', text: label }),
-      el('span', { class: 'sum-v' + (state === true ? ' on' : state === false ? ' off' : ''), text: value }),
-    ];
-    if (sw) {
-      const box = el('input', { type: 'checkbox', 'aria-label': label });
-      box.checked = sw.on;
-      const wrap = el('label', { class: 'switch mini', title: sw.on ? 'Выключить' : 'Включить' }, [box, el('span', { class: 'slider' })]);
-      wrap.addEventListener('click', (e) => e.stopPropagation());
-      box.addEventListener('change', async () => {
-        box.disabled = true;
-        await save(() => update(channelRef(), { [sw.path]: sw.value(box.checked) }), box.checked ? sw.okOn : sw.okOff);
-        box.disabled = false;
-      });
-      kids.push(wrap);
-    }
-    const go = () => onNavClick(panel);
-    g.append(el('div', { class: 'sum' + (sw ? ' has-sw' : ''), role: 'link', tabindex: '0', onclick: go, onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); go(); } } }, kids));
-  };
+  const row = (label, value, panel, state) => g.append(el('button', { class: 'sum', type: 'button', onclick: () => onNavClick(panel) }, [
+    el('span', { class: 'sum-k', text: label }),
+    el('span', { class: 'sum-v' + (state === true ? ' on' : state === false ? ' off' : ''), text: value }),
+  ]));
   const act = activeNumber(ch);
   const acc = allAccounts(ch)[act - 1];
   row('Valorant', ch.name && ch.tag ? `${acc.name}#${acc.tag}${allAccounts(ch).length > 1 ? ` · №${act} из ${allAccounts(ch).length}` : ''}` : 'не указан', 'valorant', ch.name && ch.tag ? true : null);
   row('Команды', String(ch.commands.length), 'commands');
-  row('Авто-сообщения', ch.timers.length ? `${ch.timers.length} · ${ch.timerOff ? 'выкл' : 'вкл'}` : 'нет', 'timers', ch.timers.length ? !ch.timerOff : null, ch.timers.length ? { on: !ch.timerOff, path: 'timerOff', value: (v) => !v, okOn: 'Авто-сообщения включены', okOff: 'Авто-сообщения выключены' } : null);
+  row('Авто-сообщения', ch.timers.length ? `${ch.timers.length} · ${ch.timerOff ? 'выкл' : 'вкл'}` : 'нет', 'timers', ch.timers.length ? !ch.timerOff : null);
   const activeFilters = FILTER_KINDS.filter((k) => ch.filters[k].on).length;
-  row('Фильтры чата', ch.filters.on ? `вкл · ${activeFilters} из ${FILTER_KINDS.length}` : 'выкл', 'filters', ch.filters.on, { on: !!ch.filters.on, path: 'filters/on', value: (v) => v, okOn: 'Фильтры включены', okOff: 'Фильтры выключены' });
-  row('Мини-игры', ch.games ? `вкл${ch.roulette ? ' · рулетка' : ''}` : 'выкл', 'games', ch.games, { on: !!ch.games, path: 'games', value: (v) => v, okOn: 'Мини-игры включены', okOff: 'Мини-игры выключены' });
-  row('Очки', ch.points.on ? 'вкл' : 'выкл', 'points', ch.points.on, { on: !!ch.points.on, path: 'points/on', value: (v) => v, okOn: 'Очки включены', okOff: 'Очки выключены' });
+  row('Фильтры чата', ch.filters.on ? `вкл · ${activeFilters} из ${FILTER_KINDS.length}` : 'выкл', 'filters', ch.filters.on);
+  row('Мини-игры', ch.games ? `вкл${ch.roulette ? ' · рулетка' : ''}` : 'выкл', 'games', ch.games);
+  row('Очки', ch.points.on ? 'вкл' : 'выкл', 'points', ch.points.on);
   row('Предсказания', S.predLink === undefined ? '…' : S.predLink ? 'подключены' : 'не подключены', 'pred', S.predLink === undefined ? null : S.predLink);
   row('Магазин', S.purchases.length ? `наград: ${ch.shop.length} · заказов: ${S.purchases.length}` : `наград: ${ch.shop.length}`, 'shop');
 }
@@ -1976,18 +1944,10 @@ function renderLeaders() {
 function renderOverviewTop(rows, total) {
   const ol = $('ovTop');
   ol.replaceChildren();
-  const max = Math.max(1, ...rows.map((r) => Number(r.b) || 0));
   rows.forEach((r, i) => {
-    const pct = Math.max(4, Math.round(((Number(r.b) || 0) / max) * 100));
-    const bar = el('span', { class: 'topbar-fill' });
-    bar.style.width = pct + '%';
     ol.append(el('li', { class: 'toprow' }, [
       el('span', { class: `rankno r${i + 1}`, text: `#${i + 1}` }),
-      el('span', { class: 'avatar', text: String(r.nick || '?').trim().charAt(0).toUpperCase() || '?', 'aria-hidden': 'true' }),
-      el('span', { class: 'topmain' }, [
-        el('span', { class: 'topname', text: r.nick }),
-        el('span', { class: 'topgauge' }, [bar]),
-      ]),
+      el('span', { class: 'topname', text: r.nick }),
       el('span', { class: 'topval', text: `${r.b} очк.` }),
     ]));
   });
@@ -2695,17 +2655,6 @@ function fillBotName() {
 function bindUi() {
   initExtras();
   $('ovTopMore').addEventListener('click', () => onNavClick('points'));
-  $('navMore').addEventListener('click', () => {
-    const open = $('sideNav').classList.toggle('more-open');
-    document.body.classList.toggle('nav-more', open);
-    $('navMore').setAttribute('aria-expanded', String(open));
-  });
-  document.addEventListener('click', (e) => {
-    if (!$('sideNav').classList.contains('more-open') || e.target.closest('#sideNav')) return;
-    $('sideNav').classList.remove('more-open');
-    document.body.classList.remove('nav-more');
-    $('navMore').setAttribute('aria-expanded', 'false');
-  });
   $('statMode24').addEventListener('click', () => onStatMode('24h'));
   $('statMode14').addEventListener('click', () => onStatMode('14d'));
   buildFilterForm();
@@ -2713,7 +2662,6 @@ function bindUi() {
   $('loginBtn').addEventListener('click', startLogin);
   $('linkRetry').addEventListener('click', startLogin);
   $('errorRetry').addEventListener('click', () => location.reload());
-  $('errorCopy').addEventListener('click', copyErrorDump);
   $('logoutBtn').addEventListener('click', logout);
 
   $('tabCabinet').addEventListener('click', () => setTab('cabinet'));
@@ -2739,7 +2687,7 @@ function bindUi() {
   $('gamesToggle').addEventListener('change', onGamesChange);
   $('modForm').addEventListener('submit', onModAdd);
   $('chanSelect').addEventListener('change', () => switchChannel($('chanSelect').value));
-  for (const b of document.querySelectorAll('.navbtn[data-nav]')) b.addEventListener('click', () => onNavClick(b.dataset.nav));
+  for (const b of document.querySelectorAll('.navbtn')) b.addEventListener('click', () => onNavClick(b.dataset.nav));
   $('pointsToggle').addEventListener('change', onPointsToggle);
   $('pointsForm').addEventListener('submit', onPointsSubmit);
   for (const id of ['ptsPerChat', 'ptsEveryMin', 'ptsDaily', 'ptsMaxBet']) $(id).addEventListener('input', () => { if (S) S.dirtyPoints = true; });
@@ -2782,7 +2730,7 @@ async function main() {
   showView('loading');
 
   const problem = configProblem();
-  if (problem) { showFatal(problem, [`apiUrl: ${config.apiUrl || '(пусто)'}`]); return; }
+  if (problem) { showFatal(problem); return; }
 
   const ret = consumeTwitchReturn(); // сразу убирает токен из адресной строки
   const predRet = consumePredReturn(); // и код предсказаний (после возврата с Twitch)
@@ -2795,11 +2743,9 @@ async function main() {
   const gotPub = await loadPublicConfig();
   fillBotName();
   if (!PUB.twitchClientId) {
-    if (gotPub) showFatal('E102');
-    else {
-      const errs = apiProbeErrors();
-      showFatal('E101', apiBases().map((b) => `${b}: ${errs[b] || 'нет ответа'}`));
-    }
+    showFatal(gotPub
+      ? 'Бот не передал сайту Client ID Twitch: проверьте TWITCH_CLIENT_ID в файле .env бота и перезапустите бота.'
+      : 'Нет связи с ботом (' + apiBases().join(', ') + '). Проверьте, что бот запущен и адрес apiUrl в config.js верный.');
     return;
   }
 
