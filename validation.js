@@ -346,6 +346,7 @@ export function normalizeChannel(raw) {
     timers: timersToList(raw.timers),
     games: raw.games === true,
     roulette: raw.roulette === true,
+    autoPred: raw.autoPred === true,
     points: pointsSettings(raw.points),
     shop: shopToList(raw.shop),
     filters: filtersSettings(raw.filters),
