@@ -20,11 +20,21 @@ export function currentFx() {
   return matchMedia('(prefers-reduced-motion: reduce)').matches ? 'off' : 'snow';
 }
 
+// Холст всегда растягивается ровно на окно: реальный масштаб CSS-пикселя измеряем (его меняют zoom страницы и масштаб браузера)
+function fit() {
+  canvas.style.width = '100px'; canvas.style.height = '100px';
+  const r = canvas.getBoundingClientRect();
+  const kx = r.width / 100 || 1;
+  const ky = r.height / 100 || kx;
+  canvas.style.width = innerWidth / kx + 'px';
+  canvas.style.height = innerHeight / ky + 'px';
+}
+
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 1.5);
   W = innerWidth; H = innerHeight;
   canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
-  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  fit();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   seed();
 }
@@ -113,6 +123,7 @@ export function initFx() {
   document.body.append(canvas);
   ctx = canvas.getContext('2d');
   addEventListener('resize', resize);
+  if (window.visualViewport) visualViewport.addEventListener('resize', resize);
   addEventListener('pointermove', (e) => { mx = e.clientX / Math.max(1, innerWidth); }, { passive: true });
   document.addEventListener('visibilitychange', run);
   mode = currentFx();

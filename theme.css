@@ -284,7 +284,7 @@ html[data-theme="light"] .card h2::before { box-shadow: none; }
 html[data-theme="light"] .switch input:checked + .slider { box-shadow: none; }
 
 /* ---------- Фоновые эффекты ---------- */
-#fxCanvas { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 30; }
+#fxCanvas { position: fixed; left: 0; top: 0; pointer-events: none; z-index: 30; }
 #fxCanvas[hidden] { display: none; }
 html[data-fx="off"] #fxBtn { opacity: .6; }
 html:not([data-fx="off"]) #fxBtn { color: var(--accent-ink); }
@@ -323,16 +323,13 @@ html:not([data-fx="off"]) #fxBtn { color: var(--accent-ink); }
 .sc-seq .m.l { color: var(--danger); border-color: var(--danger); background: rgba(255, 90, 100, .12); }
 @media (max-width: 560px) { .sc-head { flex-direction: column; } .sc-date { text-align: left; } .sc-row { flex-direction: column; gap: 2px; } .sc-row small { width: auto; } }
 
-/* ---------- Компактный масштаб на ПК (как 80% в браузере) ---------- */
+/* ---------- Боковое меню на ПК: плотнее и без обрезанных подписей ---------- */
 @media (min-width: 861px) {
-  main.wrap.wide-cab, body.cab-wide .topbar .wrap, body.cab-wide .foot { max-width: 1500px; }
-  .cab { grid-template-columns: 124px minmax(0, 1fr); }
-  .side { top: 70px; max-height: calc(100vh / .8 - 88px); scrollbar-width: thin; }
-  .navbtn { font-size: .68rem; }
-  .navbtn { padding: 6px 2px; gap: 3px; }
-  .navbtn .ico { width: 19px; height: 19px; }
-  .navgroup { margin: 4px 10px; }
-  .side { padding: 6px; gap: 2px; }
+  .cab { grid-template-columns: 112px minmax(0, 1fr); }
+  .side { top: 74px; max-height: calc(100vh - 90px); scrollbar-width: thin; padding: 6px; gap: 2px; }
+  .navbtn { font-size: .68rem; padding: 7px 2px; gap: 3px; }
+  .navbtn .ico { width: 20px; height: 20px; }
+  .navgroup { margin: 5px 10px; }
   .navbtn span:not(.badge) { white-space: normal; overflow-wrap: normal; word-break: normal; }
-  #fxCanvas { width: calc(100vw / .8); height: calc(100vh / .8); }
 }
+
